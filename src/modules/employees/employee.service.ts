@@ -59,6 +59,17 @@ function assertCanAssignRole(actor: AuthUser, accountType?: string, orgRole?: st
   if (grantingElevated && actor.accountType !== 'Owner') {
     throw new ForbiddenError('Only an Owner can assign the Owner or Admin role');
   }
+  // Managers (who are not Owners) may only grant the Member or Lead org role —
+  // never Manager or Admin.
+  if (
+    actor.accountType !== 'Owner' &&
+    actor.orgRole === 'Manager' &&
+    orgRole &&
+    orgRole !== 'Member' &&
+    orgRole !== 'Lead'
+  ) {
+    throw new ForbiddenError('Managers can only assign the Member or Lead role');
+  }
 }
 
 async function hydrate(profiles: EmployeeProfileDoc[]): Promise<EmployeeProfileDTO[]> {
@@ -285,6 +296,15 @@ export async function assignRole(
   // Changing an existing Admin/Owner also requires Owner
   if ((user.orgRole === 'Admin' || user.accountType === 'Owner') && actor.accountType !== 'Owner') {
     throw new ForbiddenError('Only an Owner can change an Admin or Owner account');
+  }
+  // A Manager may only change Member/Lead accounts — not another Manager
+  // (Admin/Owner targets are already blocked above).
+  if (
+    actor.accountType !== 'Owner' &&
+    actor.orgRole === 'Manager' &&
+    (user.orgRole === 'Manager' || user.orgRole === 'Admin' || user.accountType === 'Owner')
+  ) {
+    throw new ForbiddenError('Managers can only change Member or Lead accounts');
   }
   if (String(user._id) === actor.id) throw new ForbiddenError('You cannot change your own role');
 

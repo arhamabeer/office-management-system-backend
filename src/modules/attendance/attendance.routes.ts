@@ -42,8 +42,9 @@ router.get('/report', validate({ query: attendanceReportQuerySchema }), c.report
 router.get('/report/export', validate({ query: attendanceReportExportQuerySchema }), c.reportExportHandler);
 router.get('/person/:userId/weeks', validate({ params: userIdParamSchema, query: personWeeksQuerySchema }), c.personWeeksHandler);
 
-// Admin manual entry
-router.post('/', authorize({ minOrgRole: 'Admin' }), validate({ body: adminEntrySchema }), c.adminEntryHandler);
+// Manual attendance entry — Manager, Admin or Owner. Managers are limited to
+// their own team's records (scope enforced in the service).
+router.post('/', authorize({ minOrgRole: 'Manager' }), validate({ body: adminEntrySchema }), c.adminEntryHandler);
 // Auto-absent sweep (Admin/Owner) — normally scheduled; can be run on demand.
 router.post('/auto-absent/run', authorize({ minOrgRole: 'Admin' }), validate({ body: autoAbsentRunSchema }), c.runAutoAbsentHandler);
 

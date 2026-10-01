@@ -719,6 +719,12 @@ export async function runAutoAbsent(
 // ---- admin manual entry ----
 
 export async function adminEntry(actor: AuthUser, input: AdminEntryInput): Promise<AttendanceDTO> {
+  // Managers may only record attendance for people in their own scope; Owners
+  // and Admins are org-wide.
+  const scope = await scopedUserIds(actor);
+  if (!scope.orgWide && !scope.ids.some((id) => String(id) === String(input.userId))) {
+    throw new ForbiddenError('You can only record attendance for people in your team');
+  }
   const policy = await getPolicyDoc();
   const doc =
     (await Attendance.findOne({ userId: input.userId, date: input.date })) ??
