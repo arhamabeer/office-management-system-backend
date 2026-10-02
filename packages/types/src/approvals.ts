@@ -3,5 +3,7 @@
 export interface ApprovalsCountDTO {
   regularizations: number;
   leaves: number;
+  complaints: number;
+  inventoryRequests: number;
   total: number;
 }

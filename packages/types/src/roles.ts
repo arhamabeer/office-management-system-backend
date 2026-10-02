@@ -7,7 +7,7 @@
 export const ACCOUNT_TYPES = ['Owner', 'Employee'] as const;
 export type AccountType = (typeof ACCOUNT_TYPES)[number];
 
-export const ORG_ROLES = ['Admin', 'Manager', 'Lead', 'Member'] as const;
+export const ORG_ROLES = ['Admin', 'Manager', 'Lead', 'Member', 'Operations'] as const;
 export type OrgRole = (typeof ORG_ROLES)[number];
 
 export interface RolePair {
@@ -25,7 +25,17 @@ export const ORG_ROLE_RANK: Record<OrgRole, number> = {
   Manager: 3,
   Lead: 2,
   Member: 1,
+  // `Operations` is a FUNCTIONAL handler role (receives complaints/inventory
+  // requests forwarded by a manager), not a seniority tier. It is ranked at
+  // Member level on purpose so the generic `authorize({ minOrgRole })` ladder
+  // never grants it Lead/Manager approval powers; its handler-queue access is
+  // granted explicitly (orgRole === 'Operations' || Owner/Admin), never by rank.
+  Operations: 1,
 };
+
+/** Privileged org roles that only an Owner/Admin may assign to someone
+ *  (a Manager can only move people to/from Member/Lead). */
+export const ADMIN_ASSIGNABLE_ORG_ROLES: readonly OrgRole[] = ['Manager', 'Admin', 'Operations'];
 
 /** Access scope a permission can resolve to (PLAN.md §9). */
 export const ACCESS_SCOPES = ['org', 'team', 'self', 'none'] as const;

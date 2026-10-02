@@ -17,6 +17,10 @@ import { SalaryStructure, Payslip, PayrollRun } from '../src/modules/payroll/pay
 import { ExpenseCategory } from '../src/modules/expenses/expenseCategory.model';
 import { ExpensePolicy } from '../src/modules/expenses/expensePolicy.model';
 import { ExpenseClaim } from '../src/modules/expenses/expenseClaim.model';
+import { ComplaintCategory } from '../src/modules/complaints/complaintCategory.model';
+import { Complaint } from '../src/modules/complaints/complaint.model';
+import { InventoryCategory } from '../src/modules/inventoryRequests/inventoryCategory.model';
+import { InventoryRequest } from '../src/modules/inventoryRequests/inventoryRequest.model';
 import { getSettingsDoc } from '../src/modules/payroll/payroll.service';
 import { hashPassword } from '../src/modules/auth/password';
 import { logger } from '../src/common/logger';
@@ -93,6 +97,43 @@ async function seedExpenseConfig(): Promise<void> {
   await ExpensePolicy.updateOne({ key: 'default' }, { $setOnInsert: { key: 'default' } }, { upsert: true });
 }
 
+/** Base complaint configuration (categories). Editable on Complaints → Settings. */
+async function seedComplaintConfig(): Promise<void> {
+  const categories = [
+    { name: 'Workplace', code: 'WORKPLACE' },
+    { name: 'Harassment', code: 'HARASSMENT' },
+    { name: 'Facilities', code: 'FACILITIES' },
+    { name: 'IT', code: 'IT' },
+    { name: 'Payroll', code: 'PAYROLL' },
+    { name: 'Other', code: 'OTHER' },
+  ];
+  for (const cat of categories) {
+    await ComplaintCategory.updateOne(
+      { code: cat.code },
+      { $setOnInsert: { name: cat.name, code: cat.code, active: true } },
+      { upsert: true },
+    );
+  }
+}
+
+/** Base inventory-request configuration (item categories). Editable on Inventory → Settings. */
+async function seedInventoryConfig(): Promise<void> {
+  const categories = [
+    { name: 'Stationery', code: 'STATIONERY' },
+    { name: 'IT Equipment', code: 'IT_EQUIP' },
+    { name: 'Furniture', code: 'FURNITURE' },
+    { name: 'Pantry', code: 'PANTRY' },
+    { name: 'Other', code: 'OTHER' },
+  ];
+  for (const cat of categories) {
+    await InventoryCategory.updateOne(
+      { code: cat.code },
+      { $setOnInsert: { name: cat.name, code: cat.code, active: true } },
+      { upsert: true },
+    );
+  }
+}
+
 async function seed(): Promise<void> {
   await connectDb();
   if (mongoose.connection.readyState !== 1) {
@@ -111,6 +152,8 @@ async function seed(): Promise<void> {
     PayrollRun.deleteMany({}),
     SalaryStructure.deleteMany({}),
     ExpenseClaim.deleteMany({}),
+    Complaint.deleteMany({}),
+    InventoryRequest.deleteMany({}),
   ]);
   // Drop the pre-rename tax config collection if it still exists (best effort).
   await mongoose.connection.db?.dropCollection('taxconfigs').catch(() => undefined);
@@ -130,6 +173,8 @@ async function seed(): Promise<void> {
   await getSettingsDoc(); // payroll settings (PKR, July fiscal year)
   await seedLeaveConfig();
   await seedExpenseConfig();
+  await seedComplaintConfig();
+  await seedInventoryConfig();
 
   // --- Departments (org scaffolding for assigning new hires; no managers yet) ---
   const engineering = await upsertDepartment('Engineering', 'ENG');

@@ -59,8 +59,14 @@ function assertCanAssignRole(actor: AuthUser, accountType?: string, orgRole?: st
   if (grantingElevated && actor.accountType !== 'Owner') {
     throw new ForbiddenError('Only an Owner can assign the Owner or Admin role');
   }
+  // Operations is a privileged handler role (receives forwarded complaints /
+  // inventory requests) — only an Owner or Admin may grant it.
+  const actorIsOrgAdmin = actor.accountType === 'Owner' || actor.orgRole === 'Admin';
+  if (orgRole === 'Operations' && !actorIsOrgAdmin) {
+    throw new ForbiddenError('Only an Owner or Admin can assign the Operations role');
+  }
   // Managers (who are not Owners) may only grant the Member or Lead org role —
-  // never Manager or Admin.
+  // never Manager, Admin or Operations.
   if (
     actor.accountType !== 'Owner' &&
     actor.orgRole === 'Manager' &&

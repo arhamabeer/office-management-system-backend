@@ -215,6 +215,28 @@ reg('patch', '/expenses/claims/{id}/approve', 'Expenses', 'Approve a claim (Lead
 reg('patch', '/expenses/claims/{id}/reject', 'Expenses', 'Reject a claim (Lead+, in scope)');
 reg('patch', '/expenses/claims/{id}/reimburse', 'Expenses', 'Mark a claim reimbursed (Admin/Owner)');
 
+// --- Complaints (routed: manager → Operations/Admin) ---
+reg('get', '/complaints/categories', 'Complaints', 'List active complaint categories');
+reg('post', '/complaints/categories', 'Complaints', 'Create a complaint category (Admin/Owner)');
+reg('patch', '/complaints/categories/{id}', 'Complaints', 'Update a complaint category (Admin/Owner)');
+reg('delete', '/complaints/categories/{id}', 'Complaints', 'Deactivate a complaint category (Admin/Owner)');
+reg('post', '/complaints', 'Complaints', 'File a complaint (anyone)');
+reg('get', '/complaints', 'Complaints', 'List complaints (mine|inbox|all)');
+reg('get', '/complaints/export', 'Complaints', 'Download complaints as Excel (scoped)');
+reg('get', '/complaints/{id}', 'Complaints', 'Get a complaint (filer or handler)');
+reg('patch', '/complaints/{id}/decide', 'Complaints', 'Act on a complaint: resolve/reject/forward (manager or handler)');
+
+// --- Inventory requests (same routing workflow) ---
+reg('get', '/inventory-requests/categories', 'Inventory', 'List active inventory categories');
+reg('post', '/inventory-requests/categories', 'Inventory', 'Create an inventory category (Admin/Owner)');
+reg('patch', '/inventory-requests/categories/{id}', 'Inventory', 'Update an inventory category (Admin/Owner)');
+reg('delete', '/inventory-requests/categories/{id}', 'Inventory', 'Deactivate an inventory category (Admin/Owner)');
+reg('post', '/inventory-requests', 'Inventory', 'File an inventory request (anyone)');
+reg('get', '/inventory-requests', 'Inventory', 'List inventory requests (mine|inbox|all)');
+reg('get', '/inventory-requests/export', 'Inventory', 'Download inventory requests as Excel (scoped)');
+reg('get', '/inventory-requests/{id}', 'Inventory', 'Get an inventory request (filer or handler)');
+reg('patch', '/inventory-requests/{id}/decide', 'Inventory', 'Act on a request: resolve/reject/forward (manager or handler)');
+
 export function buildOpenApiDocument(prefix: string) {
   const generator = new OpenApiGeneratorV3(registry.definitions);
   return generator.generateDocument({
