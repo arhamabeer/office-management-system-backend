@@ -64,6 +64,11 @@ async function getDeviceId(): Promise<string> {
 beforeAll(async () => {
   mongod = await MongoMemoryServer.create();
   await mongoose.connect(mongod.getUri());
+  // Ensure indexes are built before tests run — notably RawPunch's unique
+  // `fingerprint`, which makes re-sent punches idempotent. Mongoose builds
+  // indexes in the background, so without this the idempotency test can race
+  // the build under parallel load and see duplicates stored.
+  await RawPunch.init();
   await makeUser('admin@dev.test', 'Owner', 'Admin', 'Ada');
   const bio = await makeUser('bio@dev.test', 'Employee', 'Member', 'Bio', '1001');
   bioUserId = String(bio._id);
