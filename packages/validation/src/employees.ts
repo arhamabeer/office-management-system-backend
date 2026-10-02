@@ -22,6 +22,8 @@ export const createEmployeeSchema = z.object({
   reportsToId: objectIdSchema.optional(),
   leadId: objectIdSchema.optional(),
   phone: z.string().trim().max(40).optional(),
+  /** Biometric-device enrollment id (PIN) this employee punches with. */
+  biometricUserId: z.string().trim().max(32).optional(),
 });
 export type CreateEmployeeInput = z.infer<typeof createEmployeeSchema>;
 
@@ -38,6 +40,8 @@ export const updateEmployeeSchema = z
     reportsToId: objectIdSchema,
     leadId: objectIdSchema,
     phone: z.string().trim().max(40),
+    // Empty string clears the mapping; max 32 chars otherwise.
+    biometricUserId: z.string().trim().max(32),
   })
   .partial();
 export type UpdateEmployeeInput = z.infer<typeof updateEmployeeSchema>;

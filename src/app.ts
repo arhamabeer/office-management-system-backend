@@ -10,6 +10,7 @@ import { mountSwagger } from './config/swagger';
 import { generalRateLimiter } from './middleware/rateLimit';
 import { errorHandler, notFoundHandler } from './middleware/error';
 import apiRoutes from './routes';
+import admsRouter from './modules/attendance/device.adms.routes';
 
 /** Build the Express application (no listening/DB side-effects — testable). */
 export function createApp(): Express {
@@ -33,6 +34,10 @@ export function createApp(): Express {
 
   // API docs (not rate-limited)
   mountSwagger(app);
+
+  // ZKTeco ADMS / push protocol — the biometric device dials out and POSTs
+  // punches here directly as plain tab-delimited text (NOT JSON, NOT under /api).
+  app.use('/iclock', express.text({ type: () => true, limit: '2mb' }), admsRouter);
 
   // Versioned API (rate-limited)
   app.use(env.API_PREFIX, generalRateLimiter, apiRoutes);

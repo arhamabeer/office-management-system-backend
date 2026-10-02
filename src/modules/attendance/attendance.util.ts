@@ -73,6 +73,37 @@ export function minutesBetween(a: Date, b: Date): number {
   return Math.max(0, Math.round((b.getTime() - a.getTime()) / 60000));
 }
 
+/**
+ * Resolve a biometric device's LOCAL wall-clock time string ("YYYY-MM-DD
+ * HH:MM:SS", in the office `tz`) to an absolute instant (Date). ZK terminals
+ * emit local time with no offset, so we must interpret it in the office
+ * timezone — treating it as UTC would silently shift days. Pure JS (no tz lib):
+ * build the naive-UTC instant, measure the zone's offset there, and subtract it.
+ */
+export function parseDeviceLocalTime(local: string, tz: string): Date {
+  const m = local.trim().match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}):(\d{2})/);
+  if (!m) throw new Error(`Unparseable device time: "${local}"`);
+  const [, y, mo, d, h, mi, s] = m.map(Number);
+  const naiveUtc = Date.UTC(y, mo - 1, d, h, mi, s);
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: tz,
+    hour12: false,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  }).formatToParts(new Date(naiveUtc));
+  const p: Record<string, string> = {};
+  for (const x of parts) p[x.type] = x.value;
+  // hour can come back as '24' at midnight in some runtimes — normalise.
+  const hour = Number(p.hour) % 24;
+  const tzAsUtc = Date.UTC(+p.year, +p.month - 1, +p.day, hour, +p.minute, +p.second);
+  const offset = tzAsUtc - naiveUtc; // how far `tz` is ahead of UTC at this instant
+  return new Date(naiveUtc - offset);
+}
+
 /** Format a UTC Date's calendar parts as YYYY-MM-DD. */
 function utcDayKey(dt: Date): string {
   const y = dt.getUTCFullYear();

@@ -40,6 +40,8 @@ export interface EmployeeProfileDTO {
   reportsToId?: string;
   leadId?: string;
   phone?: string;
+  /** The enrollment id (PIN) this employee uses on the biometric device. */
+  biometricUserId?: string;
 }
 
 export interface MeResponse {

@@ -86,9 +86,10 @@ function toRegDTO(r: RegularizationDoc, employeeName?: string): RegularizationDT
     id: String(r._id),
     userId: String(r.userId),
     employeeName,
+    kind: (r.kind ?? 'Correction') as RegularizationDTO['kind'],
     date: r.date,
     requestedCheckInAt: r.requestedCheckInAt.toISOString(),
-    requestedCheckOutAt: r.requestedCheckOutAt.toISOString(),
+    requestedCheckOutAt: r.requestedCheckOutAt ? r.requestedCheckOutAt.toISOString() : undefined,
     reason: r.reason,
     status: r.status as RegularizationDTO['status'],
     approverId: r.approverId ? String(r.approverId) : undefined,
@@ -760,8 +761,11 @@ export async function createRegularization(
   input: RegularizationCreateInput,
 ): Promise<RegularizationDTO> {
   const profile = await EmployeeProfile.findOne({ userId }).select('reportsToId firstName lastName');
+  const kind = input.kind ?? 'Correction';
+  const isDeviceDown = kind === 'DeviceDown';
   const doc = await Regularization.create({
     userId,
+    kind,
     date: input.date,
     requestedCheckInAt: input.checkInAt,
     requestedCheckOutAt: input.checkOutAt,
@@ -774,8 +778,10 @@ export async function createRegularization(
     await notify({
       userId: String(profile.reportsToId),
       type: 'approval.pending',
-      title: 'Attendance correction to review',
-      body: `${who} requested a correction for ${input.date}.`,
+      title: isDeviceDown ? 'Attendance submission to review' : 'Attendance correction to review',
+      body: isDeviceDown
+        ? `${who} submitted attendance for ${input.date} (device was down).`
+        : `${who} requested a correction for ${input.date}.`,
       link: '/approvals',
       email: true,
     });
@@ -823,10 +829,18 @@ export async function decideRegularization(
       (await Attendance.findOne({ userId: req.userId, date: req.date })) ??
       new Attendance({ userId: req.userId, date: req.date });
     doc.checkInAt = req.requestedCheckInAt;
-    doc.checkOutAt = req.requestedCheckOutAt;
-    doc.workedMinutes = minutesBetween(req.requestedCheckInAt, req.requestedCheckOutAt);
-    doc.overtimeMinutes = overtimeMinutes(doc.workedMinutes, policy);
-    doc.status = deriveStatus(doc.workedMinutes, policy);
+    if (req.requestedCheckOutAt) {
+      doc.checkOutAt = req.requestedCheckOutAt;
+      doc.workedMinutes = minutesBetween(req.requestedCheckInAt, req.requestedCheckOutAt);
+      doc.overtimeMinutes = overtimeMinutes(doc.workedMinutes, policy);
+      doc.status = deriveStatus(doc.workedMinutes, policy);
+    } else {
+      // DeviceDown report with only a check-in: record present, day still open.
+      doc.checkOutAt = undefined;
+      doc.workedMinutes = 0;
+      doc.overtimeMinutes = 0;
+      doc.status = 'Present';
+    }
     doc.source = 'AdminEntry';
     doc.createdById = new Types.ObjectId(actor.id);
     await doc.save();
@@ -845,11 +859,12 @@ export async function decideRegularization(
     targetId: String(req._id),
     meta: { date: req.date, employee: String(req.userId) },
   });
+  const noun = (req.kind ?? 'Correction') === 'DeviceDown' ? 'Attendance submission' : 'Correction';
   await notify({
     userId: String(req.userId),
     type: 'attendance.regularization_decided',
-    title: `Correction ${approve ? 'approved' : 'rejected'}`,
-    body: `Your attendance correction for ${req.date} was ${approve ? 'approved' : 'rejected'}${comment ? `: ${comment}` : ''}.`,
+    title: `${noun} ${approve ? 'approved' : 'rejected'}`,
+    body: `Your ${noun.toLowerCase()} for ${req.date} was ${approve ? 'approved' : 'rejected'}${comment ? `: ${comment}` : ''}.`,
     link: '/attendance',
     email: true,
   });

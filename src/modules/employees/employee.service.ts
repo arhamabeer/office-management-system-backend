@@ -153,6 +153,10 @@ export async function createEmployee(
 
   const email = input.email.toLowerCase();
   if (await User.exists({ email })) throw new ConflictError('A user with this email already exists');
+  const biometricUserId = input.biometricUserId?.trim() || undefined;
+  if (biometricUserId && (await EmployeeProfile.exists({ biometricUserId }))) {
+    throw new ConflictError('That device ID is already assigned to another employee');
+  }
 
   const { raw, hash } = generateOpaqueToken();
   const user = await User.create({
@@ -175,6 +179,7 @@ export async function createEmployee(
     reportsToId: input.reportsToId ? new Types.ObjectId(input.reportsToId) : undefined,
     leadId: input.leadId ? new Types.ObjectId(input.leadId) : undefined,
     phone: input.phone,
+    biometricUserId,
     status: 'Invited',
   });
 
@@ -276,6 +281,13 @@ export async function updateEmployee(
     if (input.departmentId !== undefined) profile.departmentId = new Types.ObjectId(input.departmentId);
     if (input.reportsToId !== undefined) profile.reportsToId = new Types.ObjectId(input.reportsToId);
     if (input.leadId !== undefined) profile.leadId = new Types.ObjectId(input.leadId);
+    if (input.biometricUserId !== undefined) {
+      const v = input.biometricUserId.trim();
+      if (v && (await EmployeeProfile.exists({ biometricUserId: v, _id: { $ne: profile._id } }))) {
+        throw new ConflictError('That device ID is already assigned to another employee');
+      }
+      profile.biometricUserId = v || undefined;
+    }
   }
   await profile.save();
   const [dto] = await hydrate([profile]);

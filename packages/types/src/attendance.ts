@@ -1,4 +1,10 @@
-import type { AttendanceStatus, AttendanceSource, LeaveRequestStatus } from './enums';
+import type {
+  AttendanceStatus,
+  AttendanceSource,
+  LeaveRequestStatus,
+  RegularizationKind,
+  BiometricDeviceStatus,
+} from './enums';
 
 export interface AttendanceDTO {
   id: string;
@@ -158,9 +164,12 @@ export interface RegularizationDTO {
   id: string;
   userId: string;
   employeeName?: string;
+  /** Correction (fix a record) vs DeviceDown (device-off self-report). */
+  kind: RegularizationKind;
   date: string;
   requestedCheckInAt: string;
-  requestedCheckOutAt: string;
+  /** Optional for a DeviceDown report where the employee only checked in. */
+  requestedCheckOutAt?: string;
   reason: string;
   status: LeaveRequestStatus;
   approverId?: string;
@@ -168,6 +177,53 @@ export interface RegularizationDTO {
   decidedAt?: string;
   comment?: string;
   createdAt: string;
+}
+
+/** A single raw punch received from a biometric terminal (ADMS/push), kept for
+ *  audit + dedupe; the daily Attendance record is derived from these. */
+export interface RawPunchDTO {
+  id: string;
+  deviceSerial: string;
+  /** The on-device enrollment id (PIN) the employee punched with. */
+  pin: string;
+  timestamp: string; // ISO instant
+  dayKey: string; // YYYY-MM-DD in the office timezone
+  status?: number;
+  verify?: number;
+  /** The resolved employee, or undefined when the PIN isn't mapped yet. */
+  matchedUserId?: string;
+  employeeName?: string;
+  createdAt: string;
+}
+
+/** A biometric terminal known to us, keyed by its serial number. */
+export interface BiometricDeviceDTO {
+  id: string;
+  serial: string;
+  label?: string;
+  status: BiometricDeviceStatus;
+  lastSeenAt?: string;
+  lastPunchAt?: string;
+  punchCount: number;
+  firmware?: string;
+  ipHint?: string;
+  createdAt: string;
+}
+
+/** An unmapped PIN seen on a device, with how many punches are waiting on it. */
+export interface UnmappedPinDTO {
+  deviceSerial: string;
+  pin: string;
+  punchCount: number;
+  firstSeen: string;
+  lastSeen: string;
+}
+
+export interface DeviceReconcileResultDTO {
+  from: string;
+  to: string;
+  daysRederived: number;
+  punchesConsidered: number;
 }
 
 /** An attendance row enriched with the employee's name (for team views). */

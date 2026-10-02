@@ -18,6 +18,9 @@ const employeeProfileSchema = new Schema(
     leadId: { type: Schema.Types.ObjectId, ref: 'User' },
     phone: { type: String, trim: true },
     status: { type: String, enum: USER_STATUSES, default: 'Invited' },
+    // Enrollment id (PIN) this employee uses on the biometric terminal. Maps a
+    // device punch -> this user. Unique when set (sparse), nullable otherwise.
+    biometricUserId: { type: String, trim: true },
   },
   { timestamps: true },
 );
@@ -25,6 +28,7 @@ const employeeProfileSchema = new Schema(
 employeeProfileSchema.index({ departmentId: 1 });
 employeeProfileSchema.index({ reportsToId: 1 });
 employeeProfileSchema.index({ leadId: 1 });
+employeeProfileSchema.index({ biometricUserId: 1 }, { unique: true, sparse: true });
 
 export type EmployeeProfileDoc = HydratedDocument<InferSchemaType<typeof employeeProfileSchema>>;
 export const EmployeeProfile = model('EmployeeProfile', employeeProfileSchema);

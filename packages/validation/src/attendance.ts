@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { REGULARIZATION_KINDS, BIOMETRIC_DEVICE_STATUSES } from '@ems/types';
 import { objectIdSchema, paginationQuerySchema } from './common';
 
 const dayKey = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Expected YYYY-MM-DD');
@@ -46,12 +47,16 @@ export type TeamAttendanceQuery = z.infer<typeof teamAttendanceQuerySchema>;
 
 export const regularizationCreateSchema = z
   .object({
+    // 'Correction' fixes a wrong/missing record; 'DeviceDown' is a self-report
+    // for when the biometric device was off.
+    kind: z.enum(REGULARIZATION_KINDS).default('Correction'),
     date: dayKey,
     checkInAt: z.coerce.date(),
-    checkOutAt: z.coerce.date(),
+    // Optional so a DeviceDown report can record a check-in with no check-out yet.
+    checkOutAt: z.coerce.date().optional(),
     reason: z.string().trim().min(3).max(500),
   })
-  .refine((v) => v.checkOutAt > v.checkInAt, {
+  .refine((v) => !v.checkOutAt || v.checkOutAt > v.checkInAt, {
     message: 'Check-out must be after check-in',
     path: ['checkOutAt'],
   });
@@ -66,6 +71,32 @@ export const regularizationListQuerySchema = z.object({
   scope: z.enum(['mine', 'pending']).default('mine'),
 });
 export type RegularizationListQuery = z.infer<typeof regularizationListQuerySchema>;
+
+// ---- biometric device admin ----
+
+export const deviceUpdateSchema = z
+  .object({
+    label: z.string().trim().max(80).optional(),
+    status: z.enum(BIOMETRIC_DEVICE_STATUSES).optional(),
+  })
+  .refine((v) => v.label !== undefined || v.status !== undefined, {
+    message: 'Provide a label and/or status',
+  });
+export type DeviceUpdateInput = z.infer<typeof deviceUpdateSchema>;
+
+/** Map a device enrollment PIN to one of our employees (reconciles unmapped
+ *  punches). Sets the employee's biometricUserId and re-derives their days. */
+export const mapPinSchema = z.object({
+  pin: z.string().trim().min(1).max(32),
+  userId: objectIdSchema,
+});
+export type MapPinInput = z.infer<typeof mapPinSchema>;
+
+export const deviceReconcileSchema = z.object({
+  from: dayKey.optional(),
+  to: dayKey.optional(),
+});
+export type DeviceReconcileInput = z.infer<typeof deviceReconcileSchema>;
 
 /** A valid IANA timezone string (e.g. "Asia/Karachi") — rejected if the host
  *  Intl runtime doesn't recognise it. */

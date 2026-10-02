@@ -41,6 +41,18 @@ export const LEAVE_REQUEST_STATUSES = [
 ] as const;
 export type LeaveRequestStatus = (typeof LEAVE_REQUEST_STATUSES)[number];
 
+/** Why an attendance-approval request was raised. 'Correction' = fix a wrong/
+ *  missing record; 'DeviceDown' = the biometric device was off (power cut etc.)
+ *  so the employee is self-reporting their attendance for manager approval. */
+export const REGULARIZATION_KINDS = ['Correction', 'DeviceDown'] as const;
+export type RegularizationKind = (typeof REGULARIZATION_KINDS)[number];
+
+/** Allowlist state of a biometric terminal that talks to us over ADMS/push.
+ *  A newly-seen device is 'Pending' (its punches are stored but NOT turned into
+ *  attendance until an admin 'Enabled's it); 'Disabled' devices are ignored. */
+export const BIOMETRIC_DEVICE_STATUSES = ['Pending', 'Enabled', 'Disabled'] as const;
+export type BiometricDeviceStatus = (typeof BIOMETRIC_DEVICE_STATUSES)[number];
+
 export const PAYROLL_RUN_STATUSES = ['Draft', 'Processing', 'Finalized', 'Paid'] as const;
 export type PayrollRunStatus = (typeof PAYROLL_RUN_STATUSES)[number];
 

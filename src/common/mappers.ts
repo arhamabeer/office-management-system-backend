@@ -36,5 +36,6 @@ export function toProfileDTO(
     reportsToId: p.reportsToId ? String(p.reportsToId) : undefined,
     leadId: p.leadId ? String(p.leadId) : undefined,
     phone: p.phone ?? undefined,
+    biometricUserId: p.biometricUserId ?? undefined,
   };
 }

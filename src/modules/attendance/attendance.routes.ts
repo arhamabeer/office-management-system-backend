@@ -17,12 +17,16 @@ import {
   regularizationCreateSchema,
   regularizationListQuerySchema,
   regularizationDecisionSchema,
+  deviceUpdateSchema,
+  mapPinSchema,
+  deviceReconcileSchema,
   idParamSchema,
 } from '@ems/validation';
 import { validate } from '../../middleware/validate';
 import { requireAuth } from '../../middleware/auth';
 import { authorize } from '../../middleware/rbac';
 import * as c from './attendance.controller';
+import * as dc from './device.controller';
 
 const router = Router();
 router.use(requireAuth);
@@ -57,10 +61,18 @@ router.get('/holidays', validate({ query: yearQuerySchema }), c.listHolidaysHand
 router.post('/holidays', authorize({ minOrgRole: 'Admin' }), validate({ body: holidaySchema }), c.createHolidayHandler);
 router.delete('/holidays/:id', authorize({ minOrgRole: 'Admin' }), validate({ params: idParamSchema }), c.deleteHolidayHandler);
 
-// Regularization
+// Regularization / device-down attendance submissions (kind on the body)
 router.post('/regularizations', validate({ body: regularizationCreateSchema }), c.createRegularizationHandler);
 router.get('/regularizations', validate({ query: regularizationListQuerySchema }), c.listRegularizationsHandler);
 router.patch('/regularizations/:id/approve', validate({ params: idParamSchema, body: regularizationDecisionSchema }), c.approveRegularizationHandler);
 router.patch('/regularizations/:id/reject', validate({ params: idParamSchema, body: regularizationDecisionSchema }), c.rejectRegularizationHandler);
+
+// Biometric devices (Admin/Owner). The device's own punches arrive unauthenticated
+// at /iclock (ADMS); these endpoints manage/approve devices and reconcile data.
+router.get('/devices', authorize({ minOrgRole: 'Admin' }), dc.listDevicesHandler);
+router.get('/devices/unmapped', authorize({ minOrgRole: 'Admin' }), dc.listUnmappedHandler);
+router.post('/devices/map', authorize({ minOrgRole: 'Admin' }), validate({ body: mapPinSchema }), dc.mapPinHandler);
+router.post('/devices/reconcile', authorize({ minOrgRole: 'Admin' }), validate({ body: deviceReconcileSchema }), dc.reconcileHandler);
+router.patch('/devices/:id', authorize({ minOrgRole: 'Admin' }), validate({ params: idParamSchema, body: deviceUpdateSchema }), dc.updateDeviceHandler);
 
 export default router;

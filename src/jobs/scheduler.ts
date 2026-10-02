@@ -1,6 +1,7 @@
 import { schedule, type ScheduledTask } from 'node-cron';
 import { logger } from '../common/logger';
 import { runAutoAbsent } from '../modules/attendance/attendance.service';
+import { reconcile, checkDeviceSilence } from '../modules/attendance/device.service';
 
 /**
  * Background schedulers. Started once from the server bootstrap (never in tests
@@ -16,6 +17,12 @@ const tasks: ScheduledTask[] = [];
 // configured cut-off, on a working day — this cadence just makes it responsive.
 const AUTO_ABSENT_CRON = '*/15 * * * *';
 
+// Every 10 minutes. Biometric-device safety net: with ADMS the device re-posts
+// buffered punches automatically when we come back up, so this is belt-and-
+// braces — it re-derives recent days from stored raw punches (idempotent) and
+// warns about any Enabled device that's gone silent.
+const DEVICE_SYNC_CRON = '*/10 * * * *';
+
 export function startScheduler(): void {
   if (started) return;
   started = true;
@@ -28,7 +35,20 @@ export function startScheduler(): void {
     }),
   );
 
-  logger.info(`scheduler: started (auto-absent check "${AUTO_ABSENT_CRON}")`);
+  tasks.push(
+    schedule(DEVICE_SYNC_CRON, () => {
+      void reconcile().catch((err) =>
+        logger.error({ err: (err as Error).message }, 'device reconcile failed'),
+      );
+      void checkDeviceSilence().catch((err) =>
+        logger.error({ err: (err as Error).message }, 'device silence check failed'),
+      );
+    }),
+  );
+
+  logger.info(
+    `scheduler: started (auto-absent "${AUTO_ABSENT_CRON}", device-sync "${DEVICE_SYNC_CRON}")`,
+  );
 }
 
 /** Stop all scheduled tasks (used for graceful shutdown). */
