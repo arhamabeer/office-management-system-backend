@@ -21,11 +21,6 @@ import { ComplaintCategory } from '../src/modules/complaints/complaintCategory.m
 import { Complaint } from '../src/modules/complaints/complaint.model';
 import { InventoryCategory } from '../src/modules/inventoryRequests/inventoryCategory.model';
 import { InventoryRequest } from '../src/modules/inventoryRequests/inventoryRequest.model';
-import { GoalCategory } from '../src/modules/performance/goalCategory.model';
-import { PerformancePolicy } from '../src/modules/performance/performancePolicy.model';
-import { ReviewCycle } from '../src/modules/performance/reviewCycle.model';
-import { Goal } from '../src/modules/performance/goal.model';
-import { Review } from '../src/modules/performance/review.model';
 import { CompanyProfile } from '../src/modules/businessCard/companyProfile.model';
 import { getSettingsDoc } from '../src/modules/payroll/payroll.service';
 import { hashPassword } from '../src/modules/auth/password';
@@ -141,48 +136,6 @@ async function seedInventoryConfig(): Promise<void> {
   }
 }
 
-/** Base performance configuration (goal categories, rating scale, a demo cycle).
- *  Editable on Performance → Settings. */
-async function seedPerformanceConfig(): Promise<void> {
-  const categories = [
-    { name: 'Delivery', code: 'DELIVERY' },
-    { name: 'Growth', code: 'GROWTH' },
-    { name: 'Collaboration', code: 'COLLAB' },
-    { name: 'Leadership', code: 'LEADERSHIP' },
-    { name: 'Other', code: 'OTHER' },
-  ];
-  for (const cat of categories) {
-    await GoalCategory.updateOne(
-      { code: cat.code },
-      { $setOnInsert: { name: cat.name, code: cat.code, active: true } },
-      { upsert: true },
-    );
-  }
-  await PerformancePolicy.updateOne(
-    { key: 'default' },
-    {
-      $setOnInsert: {
-        key: 'default',
-        selfReviewEnabled: false,
-        ratingLevels: [
-          { value: 1, label: 'Needs improvement' },
-          { value: 2, label: 'Developing' },
-          { value: 3, label: 'Meets expectations' },
-          { value: 4, label: 'Exceeds expectations' },
-          { value: 5, label: 'Outstanding' },
-        ],
-      },
-    },
-    { upsert: true },
-  );
-  // A demo open review cycle so goals/reviews can be grouped immediately.
-  await ReviewCycle.updateOne(
-    { name: 'H2 2026' },
-    { $setOnInsert: { name: 'H2 2026', startDate: '2026-07-01', endDate: '2026-12-31', status: 'Open' } },
-    { upsert: true },
-  );
-}
-
 /** Company details shown on employee business cards. Editable on the card page (Admin). */
 async function seedCompanyProfile(): Promise<void> {
   await CompanyProfile.updateOne(
@@ -219,8 +172,6 @@ async function seed(): Promise<void> {
     ExpenseClaim.deleteMany({}),
     Complaint.deleteMany({}),
     InventoryRequest.deleteMany({}),
-    Goal.deleteMany({}),
-    Review.deleteMany({}),
   ]);
   // Drop the pre-rename tax config collection if it still exists (best effort).
   await mongoose.connection.db?.dropCollection('taxconfigs').catch(() => undefined);
@@ -242,7 +193,6 @@ async function seed(): Promise<void> {
   await seedExpenseConfig();
   await seedComplaintConfig();
   await seedInventoryConfig();
-  await seedPerformanceConfig();
   await seedCompanyProfile();
 
   // --- Departments (org scaffolding for assigning new hires; no managers yet) ---

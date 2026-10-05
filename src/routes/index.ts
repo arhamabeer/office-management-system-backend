@@ -14,7 +14,6 @@ import notificationRoutes from '../modules/notifications/notification.routes';
 import announcementRoutes from '../modules/announcements/announcement.routes';
 import complaintRoutes from '../modules/complaints/complaints.routes';
 import inventoryRequestRoutes from '../modules/inventoryRequests/inventoryRequests.routes';
-import performanceRoutes from '../modules/performance/performance.routes';
 import businessCardRoutes from '../modules/businessCard/businessCard.routes';
 
 const router = Router();
@@ -33,7 +32,6 @@ router.use('/notifications', notificationRoutes); // in-app notifications (bell)
 router.use('/announcements', announcementRoutes); // company-wide announcements / notices
 router.use('/complaints', complaintRoutes); // employee complaints (routed: manager → Operations/Admin)
 router.use('/inventory-requests', inventoryRequestRoutes); // inventory requests (same routing workflow)
-router.use('/performance', performanceRoutes); // performance goals + manager reviews
 router.use('/business-card', businessCardRoutes); // employee digital business cards (vCard/QR/PDF)
 router.use('/audit-logs', auditRoutes); // M5 (audit trail viewer)
 //   /audit-logs · /config · /feature-flags   (cross-cutting / console hooks)

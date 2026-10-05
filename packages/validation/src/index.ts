@@ -13,5 +13,4 @@ export * from './announcements';
 export * from './requests';
 export * from './complaints';
 export * from './inventoryRequests';
-export * from './performance';
 export * from './businessCard';
