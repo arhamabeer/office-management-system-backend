@@ -92,3 +92,19 @@ export type RequestAction = (typeof REQUEST_ACTIONS)[number];
  *  initial 'submitted' (filing) event. */
 export const REQUEST_TIMELINE_ACTIONS = ['submitted', ...REQUEST_ACTIONS] as const;
 export type RequestTimelineAction = (typeof REQUEST_TIMELINE_ACTIONS)[number];
+
+/**
+ * Performance goal lifecycle. Employees draft goals and submit them for their
+ * manager's approval; approved goals are Active and the employee tracks progress
+ * to Completed. A manager may send one back (Rejected).
+ */
+export const GOAL_STATUSES = ['Draft', 'PendingApproval', 'Active', 'Completed', 'Rejected'] as const;
+export type GoalStatus = (typeof GOAL_STATUSES)[number];
+
+/** A performance review cycle is Open (reviews in progress) or Closed. */
+export const REVIEW_CYCLE_STATUSES = ['Open', 'Closed'] as const;
+export type ReviewCycleStatus = (typeof REVIEW_CYCLE_STATUSES)[number];
+
+/** A manager's review is a private Draft until Shared with the employee. */
+export const REVIEW_STATUSES = ['Draft', 'Shared'] as const;
+export type ReviewStatus = (typeof REVIEW_STATUSES)[number];

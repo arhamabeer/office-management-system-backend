@@ -237,6 +237,34 @@ reg('get', '/inventory-requests/export', 'Inventory', 'Download inventory reques
 reg('get', '/inventory-requests/{id}', 'Inventory', 'Get an inventory request (filer or handler)');
 reg('patch', '/inventory-requests/{id}/decide', 'Inventory', 'Act on a request: resolve/reject/forward (manager or handler)');
 
+// --- Performance (goals + manager reviews) ---
+reg('get', '/performance/categories', 'Performance', 'List goal categories');
+reg('post', '/performance/categories', 'Performance', 'Create a goal category (Admin/Owner)');
+reg('patch', '/performance/categories/{id}', 'Performance', 'Update a goal category (Admin/Owner)');
+reg('delete', '/performance/categories/{id}', 'Performance', 'Deactivate a goal category (Admin/Owner)');
+reg('get', '/performance/policy', 'Performance', 'Get the performance policy (rating scale)');
+reg('put', '/performance/policy', 'Performance', 'Update the performance policy (Admin/Owner)');
+reg('get', '/performance/cycles', 'Performance', 'List review cycles');
+reg('post', '/performance/cycles', 'Performance', 'Create a review cycle (Admin/Owner)');
+reg('patch', '/performance/cycles/{id}', 'Performance', 'Update / close a review cycle (Admin/Owner)');
+reg('get', '/performance/goals', 'Performance', 'List goals (mine|team|all)');
+reg('post', '/performance/goals', 'Performance', 'Create a goal');
+reg('patch', '/performance/goals/{id}', 'Performance', 'Update a goal (owner)');
+reg('patch', '/performance/goals/{id}/submit', 'Performance', 'Submit a goal for approval (owner)');
+reg('patch', '/performance/goals/{id}/complete', 'Performance', 'Mark a goal complete (owner)');
+reg('patch', '/performance/goals/{id}/approve', 'Performance', 'Approve a goal (Lead+, in scope)');
+reg('patch', '/performance/goals/{id}/reject', 'Performance', 'Send a goal back (Lead+, in scope)');
+reg('get', '/performance/reviews', 'Performance', 'List reviews (mine shared | team)');
+reg('post', '/performance/reviews', 'Performance', 'Create / update a manager review (Lead+, in scope)');
+reg('patch', '/performance/reviews/{id}/share', 'Performance', 'Share a review with the employee (Lead+)');
+
+// --- Business card ---
+reg('get', '/business-card', 'BusinessCard', 'My digital business card (data + QR)');
+reg('get', '/business-card/vcard', 'BusinessCard', 'Download my contact as a vCard (.vcf)');
+reg('get', '/business-card/pdf', 'BusinessCard', 'Download my business card as a PDF');
+reg('get', '/business-card/company', 'BusinessCard', 'Company details shown on cards');
+reg('put', '/business-card/company', 'BusinessCard', 'Update company card details (Admin/Owner)');
+
 export function buildOpenApiDocument(prefix: string) {
   const generator = new OpenApiGeneratorV3(registry.definitions);
   return generator.generateDocument({
