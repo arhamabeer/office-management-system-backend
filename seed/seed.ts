@@ -101,7 +101,6 @@ async function seedExpenseConfig(): Promise<void> {
 async function seedComplaintConfig(): Promise<void> {
   const categories = [
     { name: 'Workplace', code: 'WORKPLACE' },
-    { name: 'Harassment', code: 'HARASSMENT' },
     { name: 'Facilities', code: 'FACILITIES' },
     { name: 'IT', code: 'IT' },
     { name: 'Payroll', code: 'PAYROLL' },
@@ -114,6 +113,8 @@ async function seedComplaintConfig(): Promise<void> {
       { upsert: true },
     );
   }
+  // Drop any non-canonical categories left from earlier seeds (e.g. Harassment).
+  await ComplaintCategory.deleteMany({ code: { $nin: categories.map((c) => c.code) } });
 }
 
 /** Base inventory-request configuration (item categories). Editable on Inventory → Settings. */
