@@ -12,8 +12,10 @@ import { recordAudit } from '../../middleware/audit';
 import { NotFoundError } from '../../common/errors';
 
 const ORANGE = BRAND.colors.orange;
+const STRONG = '#C2410C'; // legible accent for TEXT — bright orange fails WCAG on white
 const GRAY = '#64748b';
 const INK = '#0f172a';
+const HAIR = '#E5E7EB';
 
 // ---------------------------------------------------------------- company config
 
@@ -141,46 +143,59 @@ export async function getCardPdf(actor: AuthUser): Promise<{ buffer: Buffer; fil
 
   const W = 520;
   const H = 300;
+  const PAD = 40;
+  const COL = 300; // left text column — leaves a clear rail for the QR
   const doc = new PDFDocument({ size: [W, H], margin: 0 });
 
-  // Brand header band.
-  doc.rect(0, 0, W, 64).fill(ORANGE);
-  doc.fillColor('#ffffff').font('Helvetica-Bold').fontSize(20).text(company.companyName, 28, 22);
+  // Flat white card with a single orange spine — no filled header band.
+  doc.rect(0, 0, W, H).fill('#ffffff');
+  doc.rect(0, 0, 5, H).fill(ORANGE);
 
-  // Name + title + department.
-  let y = 90;
-  doc.fillColor(INK).font('Helvetica-Bold').fontSize(22).text(employee.fullName, 28, y, { width: W - 180 });
-  y += 30;
+  // Company wordmark at the top (stands in for the logo).
+  doc
+    .fillColor(INK)
+    .font('Helvetica-Bold')
+    .fontSize(13)
+    .text(company.companyName.toUpperCase(), PAD, 34, { characterSpacing: 0.8, width: COL });
+
+  // Name (hero) → role (accent) → department, tightly grouped.
+  doc.fillColor(INK).font('Helvetica-Bold').fontSize(24).text(employee.fullName, PAD, 84, { width: COL });
+  let y = doc.y + 6;
   if (employee.designation) {
-    doc.fillColor(GRAY).font('Helvetica').fontSize(12).text(employee.designation, 28, y, { width: W - 180 });
-    y += 18;
+    doc.fillColor(STRONG).font('Helvetica-Bold').fontSize(12).text(employee.designation, PAD, y, { width: COL });
+    y = doc.y + 2;
   }
   if (employee.department) {
-    doc.fillColor(GRAY).font('Helvetica').fontSize(11).text(employee.department, 28, y, { width: W - 180 });
+    doc.fillColor(GRAY).font('Helvetica').fontSize(10.5).text(employee.department, PAD, y, { width: COL });
+    y = doc.y;
   }
 
-  // Contact lines (text labels — Helvetica has no emoji glyphs).
-  y = 168;
-  doc.font('Helvetica').fontSize(10).fillColor('#334155');
-  const line = (label: string, val?: string) => {
-    if (!val) return;
-    doc.font('Helvetica-Bold').fillColor(GRAY).text(`${label}`, 28, y, { continued: true });
-    doc.font('Helvetica').fillColor('#334155').text(`  ${val}`);
-    y += 16;
-  };
-  line('Email', employee.email);
-  line('Phone', employee.phone ?? company.phone);
-  line('Web', company.website);
-  line('Address', company.address);
+  // Hairline divider.
+  y += 14;
+  doc.lineWidth(1).moveTo(PAD, y).lineTo(PAD + COL - 40, y).stroke(HAIR);
 
-  // QR on the right.
-  doc.image(qrPng, W - 150, 86, { width: 120 });
-  doc.fillColor(GRAY).font('Helvetica').fontSize(8).text('Scan to save contact', W - 150, 210, { width: 120, align: 'center' });
+  // Contact — clean value-only lines (no label column).
+  y += 18;
+  doc.font('Helvetica').fontSize(11).fillColor('#334155').text(employee.email, PAD, y, { width: COL });
+  const phone = employee.phone ?? company.phone;
+  if (phone) doc.text(phone, PAD, doc.y + 6, { width: COL });
 
-  // Tagline footer.
-  if (company.tagline) {
-    doc.fillColor(ORANGE).font('Helvetica-Oblique').fontSize(9).text(company.tagline, 28, H - 30, { width: W - 56 });
-  }
+  // Quiet colophon pinned near the bottom.
+  const colophon = [company.website, company.address].filter(Boolean).join('   ·   ');
+  if (colophon) doc.fillColor(GRAY).font('Helvetica').fontSize(9).text(colophon, PAD, H - 30, { width: COL });
+
+  // QR seated in a bordered panel on the right, vertically centred.
+  const qrSize = 112;
+  const panel = qrSize + 18;
+  const px = W - 36 - panel;
+  const py = (H - panel - 20) / 2;
+  doc.roundedRect(px, py, panel, panel, 10).lineWidth(1).fillAndStroke('#ffffff', HAIR);
+  doc.image(qrPng, px + 9, py + 9, { width: qrSize, height: qrSize });
+  doc
+    .fillColor(GRAY)
+    .font('Helvetica-Bold')
+    .fontSize(7)
+    .text('SCAN TO SAVE CONTACT', px, py + panel + 8, { width: panel, align: 'center', characterSpacing: 1 });
 
   const buffer = await toBuffer(doc);
   const safe = employee.fullName.replace(/[^a-z0-9]+/gi, '-').toLowerCase() || 'card';
