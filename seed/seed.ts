@@ -145,6 +145,7 @@ async function seedCompanyProfile(): Promise<void> {
         companyName: 'BrainCrop',
         website: 'https://braincrop.io',
         email: 'info@braincrop.io',
+        phone: '+92 21 111 2726 7627',
         address: 'Office 706, Ibrahim Trade Tower, Shahrah e Faisal, Block 7/8, Karachi 75350',
         tagline: 'Smart software for growing teams.',
       },
