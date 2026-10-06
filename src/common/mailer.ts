@@ -110,6 +110,20 @@ export async function sendMail(mail: Mail): Promise<void> {
   }
 }
 
+/**
+ * Send and SURFACE failures — for deliberate, user-initiated sends (e.g. emailing
+ * a letter) where we must not report success unless the message really went out.
+ * Throws when no transport is configured or the send fails.
+ */
+export async function sendMailStrict(mail: Mail): Promise<void> {
+  const transport = await getTransport();
+  if (!transport) throw new Error('Email is not configured on the server — set SMTP_URL/SMTP_HOST.');
+  const info = await transport.sendMail({ from: env.MAIL_FROM, ...mail });
+  const preview = nodemailer.getTestMessageUrl(info);
+  if (preview) logger.info(`[mail] Preview the email: ${preview}`);
+  else logger.info({ to: mail.to, messageId: info.messageId }, '[mail] sent');
+}
+
 /** Branded invitation / onboarding email. */
 export function inviteEmail(opts: {
   to: string;
@@ -305,7 +319,8 @@ ${intro} The letter is attached as a PDF.
 }
 
 export async function sendLetterEmail(opts: Parameters<typeof letterEmail>[0]): Promise<void> {
-  await sendMail(letterEmail(opts));
+  // Strict: a letter send is user-initiated, so a failure must surface, not be swallowed.
+  await sendMailStrict(letterEmail(opts));
 }
 
 /** Branded "marked absent" notice. Sent to the employee, and (as a manager
