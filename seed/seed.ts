@@ -22,6 +22,7 @@ import { Complaint } from '../src/modules/complaints/complaint.model';
 import { InventoryCategory } from '../src/modules/inventoryRequests/inventoryCategory.model';
 import { InventoryRequest } from '../src/modules/inventoryRequests/inventoryRequest.model';
 import { CompanyProfile } from '../src/modules/businessCard/companyProfile.model';
+import { LetterTemplate } from '../src/modules/letters/letterTemplate.model';
 import { getSettingsDoc } from '../src/modules/payroll/payroll.service';
 import { hashPassword } from '../src/modules/auth/password';
 import { logger } from '../src/common/logger';
@@ -154,6 +155,69 @@ async function seedCompanyProfile(): Promise<void> {
   );
 }
 
+/** Starter letter templates — generic, reusable; an admin fills in a recipient
+ *  at download/email time. Idempotent (upsert by title). */
+async function seedLetterTemplates(): Promise<void> {
+  const templates = [
+    {
+      title: 'Experience Letter',
+      subject: 'To Whom It May Concern',
+      salutation: 'To Whom It May Concern,',
+      body:
+        'This is to certify that [Employee Name] was employed with [Company] as [Designation] from [Start Date] to [End Date].\n\n' +
+        'During this tenure, [he/she/they] was found to be sincere, hardworking and professional in all assigned responsibilities.\n\n' +
+        'We wish [him/her/them] all the best in [his/her/their] future endeavours.',
+    },
+    {
+      title: 'Offer Letter',
+      subject: 'Offer of Employment',
+      salutation: 'Dear [Candidate Name],',
+      body:
+        'We are pleased to offer you the position of [Designation] at [Company]. Your expected date of joining is [Join Date].\n\n' +
+        'Your gross monthly compensation will be [Amount], subject to the terms and policies of the company.\n\n' +
+        'Please sign and return a copy of this letter as a token of your acceptance. We look forward to welcoming you to the team.',
+    },
+    {
+      title: 'Employment / Salary Verification',
+      subject: 'Employment & Salary Verification',
+      salutation: 'To Whom It May Concern,',
+      body:
+        'This is to confirm that [Employee Name] is currently employed with [Company] as [Designation] since [Start Date].\n\n' +
+        '[His/Her/Their] current gross monthly salary is [Amount]. This letter is issued upon request for [purpose].\n\n' +
+        'Should you require any further information, please feel free to contact us.',
+    },
+    {
+      title: 'No Objection Certificate',
+      subject: 'No Objection Certificate',
+      salutation: 'To Whom It May Concern,',
+      body:
+        'This is to certify that [Employee Name], holding the position of [Designation] at [Company], has no objection from the organisation for [purpose, e.g. applying for a visa].\n\n' +
+        'This certificate is issued on [his/her/their] request and does not hold the company liable in any manner.',
+    },
+    {
+      title: 'Warning Letter',
+      subject: 'Written Warning',
+      salutation: 'Dear [Employee Name],',
+      body:
+        'This letter serves as a formal warning regarding [describe the issue, e.g. repeated late arrivals] observed on [date(s)].\n\n' +
+        'Such conduct is not in line with company policy and is expected to be corrected with immediate effect. Any recurrence may lead to further disciplinary action.\n\n' +
+        'You are advised to treat this matter with the seriousness it deserves.',
+    },
+    {
+      title: 'Appreciation Letter',
+      subject: 'Letter of Appreciation',
+      salutation: 'Dear [Employee Name],',
+      body:
+        'On behalf of [Company], I would like to express our sincere appreciation for your outstanding contribution to [project / achievement].\n\n' +
+        'Your dedication and commitment have set a strong example for the team. Thank you for your continued hard work.\n\n' +
+        'We look forward to your continued success with us.',
+    },
+  ];
+  for (const t of templates) {
+    await LetterTemplate.updateOne({ title: t.title }, { $set: t }, { upsert: true });
+  }
+}
+
 async function seed(): Promise<void> {
   await connectDb();
   if (mongoose.connection.readyState !== 1) {
@@ -196,6 +260,7 @@ async function seed(): Promise<void> {
   await seedComplaintConfig();
   await seedInventoryConfig();
   await seedCompanyProfile();
+  await seedLetterTemplates();
 
   // --- Departments (org scaffolding for assigning new hires; no managers yet) ---
   const engineering = await upsertDepartment('Engineering', 'ENG');

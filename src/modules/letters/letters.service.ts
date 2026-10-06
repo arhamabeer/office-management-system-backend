@@ -1,68 +1,72 @@
 import { Types } from 'mongoose';
 import PDFDocument from 'pdfkit';
-import type { LetterDTO, CompanyProfileDTO } from '@ems/types';
-import type { LetterInput, UpdateLetterInput } from '@ems/validation';
+import type { LetterTemplateDTO, CompanyProfileDTO } from '@ems/types';
+import type {
+  LetterTemplateInput,
+  UpdateLetterTemplateInput,
+  RenderLetterInput,
+  EmailLetterInput,
+} from '@ems/validation';
 import type { AuthUser } from '../../middleware/auth';
-import { Letter, type LetterDoc } from './letter.model';
+import { LetterTemplate, type LetterTemplateDoc } from './letterTemplate.model';
 import { getCompanyProfile } from '../businessCard/businessCard.service';
 import { PDF, drawLetterhead, toBuffer } from '../../common/pdfBrand';
+import { sendLetterEmail } from '../../common/mailer';
 import { recordAudit } from '../../middleware/audit';
 import { NotFoundError } from '../../common/errors';
 
-function toDTO(l: LetterDoc): LetterDTO {
+// ---------------------------------------------------------------- templates
+
+function toDTO(t: LetterTemplateDoc): LetterTemplateDTO {
   return {
-    id: String(l._id),
-    title: l.title,
-    reference: l.reference ?? undefined,
-    letterDate: l.letterDate ?? undefined,
-    recipientName: l.recipientName ?? undefined,
-    recipientLines: l.recipientLines ?? undefined,
-    salutation: l.salutation ?? undefined,
-    subject: l.subject,
-    body: l.body,
-    signatoryName: l.signatoryName ?? undefined,
-    signatoryTitle: l.signatoryTitle ?? undefined,
-    createdById: l.createdById ? String(l.createdById) : undefined,
-    createdAt: (l.createdAt as Date).toISOString(),
-    updatedAt: (l.updatedAt as Date).toISOString(),
+    id: String(t._id),
+    title: t.title,
+    subject: t.subject,
+    salutation: t.salutation ?? undefined,
+    body: t.body,
+    signatoryName: t.signatoryName ?? undefined,
+    signatoryTitle: t.signatoryTitle ?? undefined,
+    createdById: t.createdById ? String(t.createdById) : undefined,
+    createdAt: (t.createdAt as Date).toISOString(),
+    updatedAt: (t.updatedAt as Date).toISOString(),
   };
 }
 
-export async function listLetters(): Promise<LetterDTO[]> {
-  const docs = await Letter.find().sort({ updatedAt: -1 });
+export async function listTemplates(): Promise<LetterTemplateDTO[]> {
+  const docs = await LetterTemplate.find().sort({ title: 1, updatedAt: -1 });
   return docs.map(toDTO);
 }
 
-export async function getLetter(id: string): Promise<LetterDTO> {
-  const doc = await Letter.findById(id);
-  if (!doc) throw new NotFoundError('Letter not found');
+export async function getTemplate(id: string): Promise<LetterTemplateDTO> {
+  const doc = await LetterTemplate.findById(id);
+  if (!doc) throw new NotFoundError('Letter template not found');
   return toDTO(doc);
 }
 
-export async function createLetter(actor: AuthUser, input: LetterInput): Promise<LetterDTO> {
-  const doc = await Letter.create({ ...input, createdById: new Types.ObjectId(actor.id) });
-  await recordAudit({ action: 'letter.created', actorId: actor.id, actorLabel: actor.email, targetType: 'Letter', targetId: String(doc._id), meta: { title: doc.title } });
+export async function createTemplate(actor: AuthUser, input: LetterTemplateInput): Promise<LetterTemplateDTO> {
+  const doc = await LetterTemplate.create({ ...input, createdById: new Types.ObjectId(actor.id) });
+  await recordAudit({ action: 'letter_template.created', actorId: actor.id, actorLabel: actor.email, targetType: 'LetterTemplate', targetId: String(doc._id), meta: { title: doc.title } });
   return toDTO(doc);
 }
 
-export async function updateLetter(actor: AuthUser, id: string, input: UpdateLetterInput): Promise<LetterDTO> {
-  const doc = await Letter.findById(id);
-  if (!doc) throw new NotFoundError('Letter not found');
+export async function updateTemplate(actor: AuthUser, id: string, input: UpdateLetterTemplateInput): Promise<LetterTemplateDTO> {
+  const doc = await LetterTemplate.findById(id);
+  if (!doc) throw new NotFoundError('Letter template not found');
   Object.assign(doc, input);
   await doc.save();
-  await recordAudit({ action: 'letter.updated', actorId: actor.id, actorLabel: actor.email, targetType: 'Letter', targetId: id });
+  await recordAudit({ action: 'letter_template.updated', actorId: actor.id, actorLabel: actor.email, targetType: 'LetterTemplate', targetId: id });
   return toDTO(doc);
 }
 
-export async function deleteLetter(actor: AuthUser, id: string): Promise<void> {
-  const doc = await Letter.findByIdAndDelete(id);
-  if (!doc) throw new NotFoundError('Letter not found');
-  await recordAudit({ action: 'letter.deleted', actorId: actor.id, actorLabel: actor.email, targetType: 'Letter', targetId: id, meta: { title: doc.title } });
+export async function deleteTemplate(actor: AuthUser, id: string): Promise<void> {
+  const doc = await LetterTemplate.findByIdAndDelete(id);
+  if (!doc) throw new NotFoundError('Letter template not found');
+  await recordAudit({ action: 'letter_template.deleted', actorId: actor.id, actorLabel: actor.email, targetType: 'LetterTemplate', targetId: id, meta: { title: doc.title } });
 }
 
 // ---------------------------------------------------------------- PDF
 
-function buildLetterPdf(letter: LetterDTO, company: CompanyProfileDTO): Promise<Buffer> {
+function buildLetterPdf(letter: RenderLetterInput, company: CompanyProfileDTO): Promise<Buffer> {
   const doc = new PDFDocument({ size: 'A4', margin: 50 });
   const left = doc.page.margins.left;
   const contentW = doc.page.width - left - doc.page.margins.right;
@@ -135,10 +139,27 @@ function buildLetterPdf(letter: LetterDTO, company: CompanyProfileDTO): Promise<
   return toBuffer(doc);
 }
 
-export async function getLetterPdf(actor: AuthUser, id: string): Promise<{ buffer: Buffer; filename: string }> {
-  const letter = await getLetter(id);
+function fileName(title: string): string {
+  const safe = title.replace(/[^a-z0-9]+/gi, '-').replace(/^-+|-+$/g, '').toLowerCase() || 'letter';
+  return `${safe}.pdf`;
+}
+
+export async function renderLetter(actor: AuthUser, input: RenderLetterInput): Promise<{ buffer: Buffer; filename: string }> {
   const company = await getCompanyProfile();
-  await recordAudit({ action: 'letter.download', actorId: actor.id, actorLabel: actor.email, targetType: 'Letter', targetId: id });
-  const safe = letter.title.replace(/[^a-z0-9]+/gi, '-').toLowerCase() || 'letter';
-  return { buffer: await buildLetterPdf(letter, company), filename: `${safe}.pdf` };
+  await recordAudit({ action: 'letter.download', actorId: actor.id, actorLabel: actor.email, meta: { subject: input.subject } });
+  return { buffer: await buildLetterPdf(input, company), filename: fileName(input.title) };
+}
+
+export async function emailLetter(actor: AuthUser, input: EmailLetterInput): Promise<{ success: true }> {
+  const company = await getCompanyProfile();
+  const buffer = await buildLetterPdf(input, company);
+  await sendLetterEmail({
+    to: input.recipientEmail,
+    recipientName: input.recipientName,
+    subject: input.subject,
+    orgName: company.companyName,
+    pdf: { filename: fileName(input.title), content: buffer, contentType: 'application/pdf' },
+  });
+  await recordAudit({ action: 'letter.emailed', actorId: actor.id, actorLabel: actor.email, meta: { to: input.recipientEmail, subject: input.subject } });
+  return { success: true };
 }

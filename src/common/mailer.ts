@@ -2,11 +2,18 @@ import nodemailer, { type Transporter } from 'nodemailer';
 import { env, isTest } from '../config/env';
 import { logger } from './logger';
 
+export interface MailAttachment {
+  filename: string;
+  content: Buffer;
+  contentType?: string;
+}
+
 export interface Mail {
   to: string;
   subject: string;
   html: string;
   text: string;
+  attachments?: MailAttachment[];
 }
 
 let cached: Transporter | null | undefined;
@@ -254,6 +261,51 @@ ${actionUrl ? `\n${actionLabel ?? 'Open'}: ${actionUrl}\n` : ''}
 
 export async function sendNotificationEmail(opts: Parameters<typeof notificationEmail>[0]): Promise<void> {
   await sendMail(notificationEmail(opts));
+}
+
+/** Branded cover email that carries a letter PDF as an attachment. */
+export function letterEmail(opts: {
+  to: string;
+  recipientName?: string;
+  subject: string;
+  orgName: string;
+  senderName?: string;
+  pdf: MailAttachment;
+}): Mail {
+  const { to, recipientName, subject, orgName, senderName, pdf } = opts;
+  const greeting = recipientName ? `Dear ${recipientName},` : 'Hello,';
+  const intro = `Please find attached a letter from ${orgName}${senderName ? `, sent by ${senderName}` : ''}.`;
+  const html = `<!doctype html>
+<html>
+  <body style="margin:0;background:#f4f4f5;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:#18181b;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f4f4f5;padding:32px 16px;">
+      <tr><td align="center">
+        <table role="presentation" width="480" cellpadding="0" cellspacing="0" style="max-width:480px;background:#ffffff;border-radius:12px;overflow:hidden;border:1px solid #e4e4e7;">
+          <tr><td style="background:#FC6810;height:6px;font-size:0;line-height:0;">&nbsp;</td></tr>
+          <tr><td style="padding:32px 32px 8px;">
+            <h1 style="margin:0 0 4px;font-size:20px;">${subject}</h1>
+            <p style="margin:0;color:#52525b;font-size:14px;">${orgName}</p>
+          </td></tr>
+          <tr><td style="padding:8px 32px 24px;font-size:15px;line-height:1.6;color:#3f3f46;">
+            <p style="margin:0 0 12px;">${greeting}</p>
+            <p style="margin:0 0 12px;">${intro} The letter is attached as a PDF.</p>
+            <p style="margin:0;color:#a1a1aa;font-size:12px;">If you weren't expecting this, you can ignore this email.</p>
+          </td></tr>
+        </table>
+      </td></tr>
+    </table>
+  </body>
+</html>`;
+  const text = `${greeting}
+
+${intro} The letter is attached as a PDF.
+
+— ${orgName}`;
+  return { to, subject, html, text, attachments: [pdf] };
+}
+
+export async function sendLetterEmail(opts: Parameters<typeof letterEmail>[0]): Promise<void> {
+  await sendMail(letterEmail(opts));
 }
 
 /** Branded "marked absent" notice. Sent to the employee, and (as a manager
