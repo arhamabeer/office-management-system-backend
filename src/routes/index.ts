@@ -15,6 +15,7 @@ import announcementRoutes from '../modules/announcements/announcement.routes';
 import complaintRoutes from '../modules/complaints/complaints.routes';
 import inventoryRequestRoutes from '../modules/inventoryRequests/inventoryRequests.routes';
 import businessCardRoutes from '../modules/businessCard/businessCard.routes';
+import letterRoutes from '../modules/letters/letters.routes';
 
 const router = Router();
 
@@ -33,6 +34,7 @@ router.use('/announcements', announcementRoutes); // company-wide announcements 
 router.use('/complaints', complaintRoutes); // employee complaints (routed: manager → Operations/Admin)
 router.use('/inventory-requests', inventoryRequestRoutes); // inventory requests (same routing workflow)
 router.use('/business-card', businessCardRoutes); // employee digital business cards (vCard/QR/PDF)
+router.use('/letters', letterRoutes); // Owner/Admin letter composer on the company letterhead
 router.use('/audit-logs', auditRoutes); // M5 (audit trail viewer)
 //   /audit-logs · /config · /feature-flags   (cross-cutting / console hooks)
 
