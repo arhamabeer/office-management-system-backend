@@ -9,6 +9,10 @@ const payrollSettingsSchema = new Schema(
     currency: { type: String, default: 'PKR' },
     fiscalYearStartMonth: { type: Number, default: 7 },
     taxYearLabel: { type: String, default: '2026' },
+    // Automatic monthly payroll: when enabled, payroll runs + finalizes for all
+    // employees on `payrollRunDay` each month (clamped to the month's length).
+    autoRunEnabled: { type: Boolean, default: false },
+    payrollRunDay: { type: Number, default: 1, min: 1, max: 28 },
   },
   { timestamps: true },
 );

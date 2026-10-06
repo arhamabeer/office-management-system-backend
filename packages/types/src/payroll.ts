@@ -37,6 +37,10 @@ export interface PayrollSettingsDTO {
   currency: string;
   fiscalYearStartMonth: number;
   taxYearLabel: string;
+  /** Run + finalize payroll automatically each month. */
+  autoRunEnabled: boolean;
+  /** Day of the month (1–28) the automatic run fires. */
+  payrollRunDay: number;
 }
 
 export interface PayslipDTO {

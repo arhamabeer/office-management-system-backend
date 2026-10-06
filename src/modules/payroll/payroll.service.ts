@@ -27,6 +27,8 @@ import { generatePayslipPdf, generateCertificatePdf } from './pdf';
 import { getCompanyProfile } from '../businessCard/businessCard.service';
 import { buildXlsx } from '../../common/xlsx';
 import { recordAudit } from '../../middleware/audit';
+import { notifyMany } from '../../common/notify';
+import { logger } from '../../common/logger';
 import { ForbiddenError, NotFoundError, ConflictError } from '../../common/errors';
 
 function isOrgAdmin(a: AuthUser): boolean {
@@ -49,6 +51,8 @@ export async function getSettingsDoc(): Promise<PayrollSettingsDoc> {
     currency: 'PKR',
     fiscalYearStartMonth: 7,
     taxYearLabel: '2026',
+    autoRunEnabled: false,
+    payrollRunDay: 1,
   });
 }
 
@@ -58,6 +62,8 @@ function settingsDTO(c: PayrollSettingsDoc): PayrollSettingsDTO {
     currency: c.currency ?? 'PKR',
     fiscalYearStartMonth: c.fiscalYearStartMonth ?? 7,
     taxYearLabel: c.taxYearLabel ?? '2026',
+    autoRunEnabled: c.autoRunEnabled ?? false,
+    payrollRunDay: c.payrollRunDay ?? 1,
   };
 }
 
@@ -251,18 +257,16 @@ function runDTO(r: PayrollRunDoc): PayrollRunDTO {
   };
 }
 
-export async function runPayroll(actor: AuthUser, month: string): Promise<PayrollRunDTO> {
-  const existing = await PayrollRun.findOne({ month });
-  if (existing && existing.status !== 'Draft') {
-    throw new ConflictError(`Payroll for ${month} is already ${existing.status.toLowerCase()}`);
-  }
-  const settings = await getSettingsDoc();
+/** Generate/refresh this month's payslips for every eligible employee and tally
+ *  the run. Shared by the manual run and the scheduled auto-run. The run's final
+ *  status is set by the caller. Returns the users who got a payslip. */
+async function populateRun(
+  run: PayrollRunDoc,
+  month: string,
+  settings: PayrollSettingsDoc,
+  status: PayrollRunStatus,
+): Promise<Types.ObjectId[]> {
   const { start, label } = fiscalYearBounds(month, settings.fiscalYearStartMonth ?? 7);
-
-  const run =
-    existing ??
-    (await PayrollRun.create({ month, status: 'Draft', processedById: new Types.ObjectId(actor.id) }));
-
   const structures = await SalaryStructure.find();
   let totalNet = 0;
   let totalTax = 0;
@@ -296,7 +300,7 @@ export async function runPayroll(actor: AuthUser, month: string): Promise<Payrol
           ytdTax: priorTax + v.monthlyTax,
           ytdNet: priorNet + v.monthlyNet,
           taxYearLabel: label,
-          status: 'Draft',
+          status,
         },
       },
       { upsert: true },
@@ -313,10 +317,72 @@ export async function runPayroll(actor: AuthUser, month: string): Promise<Payrol
   run.payslipCount = count;
   run.totalNet = totalNet;
   run.totalTax = totalTax;
-  run.status = 'Draft';
+  run.status = status;
+  return processedIds;
+}
+
+export async function runPayroll(actor: AuthUser, month: string): Promise<PayrollRunDTO> {
+  const existing = await PayrollRun.findOne({ month });
+  if (existing && existing.status !== 'Draft') {
+    throw new ConflictError(`Payroll for ${month} is already ${existing.status.toLowerCase()}`);
+  }
+  const settings = await getSettingsDoc();
+  const run =
+    existing ??
+    (await PayrollRun.create({ month, status: 'Draft', processedById: new Types.ObjectId(actor.id) }));
+  const processed = await populateRun(run, month, settings, 'Draft');
   await run.save();
-  await recordAudit({ action: 'payroll.run', actorId: actor.id, actorLabel: actor.email, meta: { month, count } });
+  await recordAudit({ action: 'payroll.run', actorId: actor.id, actorLabel: actor.email, meta: { month, count: processed.length } });
   return runDTO(run);
+}
+
+/** Notify the processed employees that their payslip for `month` is available. */
+async function notifyPayslipsReady(month: string, userIds: Types.ObjectId[]): Promise<void> {
+  if (!userIds.length) return;
+  await notifyMany(
+    userIds.map(String),
+    {
+      type: 'payroll',
+      title: `💸 Payslip ready for ${month}`,
+      body: `Your payslip for ${month} is now available. You can download it (and your tax certificate) from Payroll.`,
+      link: '/payroll',
+      email: true,
+    },
+  );
+}
+
+/**
+ * Scheduled monthly payroll. Self-guarding: fires on every tick but only acts
+ * when auto-run is enabled, today is on/after the configured run day (clamped to
+ * the month's length — so it still runs on the server's return if it was down),
+ * and this month hasn't already been finalized. Runs AND finalizes so payslips
+ * and tax data are immediately available, then notifies employees. Idempotent.
+ */
+export async function runScheduledPayroll(now = new Date()): Promise<{ ran: boolean; month?: string; count?: number }> {
+  const settings = await getSettingsDoc();
+  if (!settings.autoRunEnabled) return { ran: false };
+
+  const y = now.getFullYear();
+  const m = now.getMonth(); // 0-based
+  const month = `${y}-${String(m + 1).padStart(2, '0')}`;
+  const daysInMonth = new Date(y, m + 1, 0).getDate();
+  const effectiveDay = Math.min(settings.payrollRunDay ?? 1, daysInMonth);
+  if (now.getDate() < effectiveDay) return { ran: false }; // not due yet this month
+
+  const existing = await PayrollRun.findOne({ month });
+  if (existing && existing.status === 'Finalized') return { ran: false }; // already done
+
+  const run = existing ?? (await PayrollRun.create({ month, status: 'Draft' }));
+  const processed = await populateRun(run, month, settings, 'Finalized');
+  run.status = 'Finalized';
+  run.finalizedAt = now;
+  await run.save();
+  await Payslip.updateMany({ runId: run._id }, { $set: { status: 'Finalized' } });
+
+  await recordAudit({ action: 'payroll.auto_run', actorLabel: 'Auto payroll', targetType: 'PayrollRun', targetId: String(run._id), meta: { month, count: processed.length } });
+  logger.info(`auto-payroll: finalized ${month} — ${processed.length} payslips`);
+  await notifyPayslipsReady(month, processed);
+  return { ran: true, month, count: processed.length };
 }
 
 export async function finalizeRun(actor: AuthUser, id: string): Promise<PayrollRunDTO> {

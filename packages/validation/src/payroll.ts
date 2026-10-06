@@ -38,6 +38,8 @@ export const updatePayrollSettingsSchema = z
     currency: z.string().trim().min(1).max(8),
     fiscalYearStartMonth: z.number().int().min(1).max(12),
     taxYearLabel: z.string().trim().max(20),
+    autoRunEnabled: z.boolean(),
+    payrollRunDay: z.number().int().min(1).max(28),
   })
   .partial();
 export type UpdatePayrollSettingsInput = z.infer<typeof updatePayrollSettingsSchema>;

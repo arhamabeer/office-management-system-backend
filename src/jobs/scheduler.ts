@@ -2,6 +2,7 @@ import { schedule, type ScheduledTask } from 'node-cron';
 import { logger } from '../common/logger';
 import { runAutoAbsent } from '../modules/attendance/attendance.service';
 import { reconcile, checkDeviceSilence } from '../modules/attendance/device.service';
+import { runScheduledPayroll } from '../modules/payroll/payroll.service';
 
 /**
  * Background schedulers. Started once from the server bootstrap (never in tests
@@ -22,6 +23,11 @@ const AUTO_ABSENT_CRON = '*/15 * * * *';
 // braces — it re-derives recent days from stored raw punches (idempotent) and
 // warns about any Enabled device that's gone silent.
 const DEVICE_SYNC_CRON = '*/10 * * * *';
+
+// Hourly. The auto-payroll job self-guards — it only runs + finalizes once per
+// month, on/after the configured run day, when enabled — so hourly just makes it
+// prompt (and lets it catch up if the server was down on the run day).
+const PAYROLL_CRON = '0 * * * *';
 
 export function startScheduler(): void {
   if (started) return;
@@ -46,8 +52,16 @@ export function startScheduler(): void {
     }),
   );
 
+  tasks.push(
+    schedule(PAYROLL_CRON, () => {
+      void runScheduledPayroll().catch((err) =>
+        logger.error({ err: (err as Error).message }, 'auto-payroll run failed'),
+      );
+    }),
+  );
+
   logger.info(
-    `scheduler: started (auto-absent "${AUTO_ABSENT_CRON}", device-sync "${DEVICE_SYNC_CRON}")`,
+    `scheduler: started (auto-absent "${AUTO_ABSENT_CRON}", device-sync "${DEVICE_SYNC_CRON}", auto-payroll "${PAYROLL_CRON}")`,
   );
 }
 
