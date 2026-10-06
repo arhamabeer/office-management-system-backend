@@ -24,6 +24,7 @@ import { User } from '../auth/user.model';
 import { EmployeeProfile } from '../employees/employeeProfile.model';
 import { computeSalaryView, fiscalYearBounds } from './payroll.util';
 import { generatePayslipPdf, generateCertificatePdf } from './pdf';
+import { getCompanyProfile } from '../businessCard/businessCard.service';
 import { buildXlsx } from '../../common/xlsx';
 import { recordAudit } from '../../middleware/audit';
 import { ForbiddenError, NotFoundError, ConflictError } from '../../common/errors';
@@ -370,7 +371,7 @@ export async function getPayslipPdf(actor: AuthUser, id: string): Promise<{ buff
   const doc = await loadPayslipFor(actor, id);
   const dto = payslipDTO(doc, await employeeName(String(doc.userId)));
   await recordAudit({ action: 'payslip.download', actorId: actor.id, actorLabel: actor.email, targetType: 'Payslip', targetId: id });
-  return { buffer: await generatePayslipPdf(dto), filename: `payslip-${dto.month}.pdf` };
+  return { buffer: await generatePayslipPdf(dto, await getCompanyProfile()), filename: `payslip-${dto.month}.pdf` };
 }
 
 // ---- tax certificate ----
@@ -406,5 +407,5 @@ export async function getTaxCertificate(actor: AuthUser, targetUserId?: string, 
 export async function getTaxCertificatePdf(actor: AuthUser, targetUserId?: string, year?: number): Promise<{ buffer: Buffer; filename: string }> {
   const cert = await buildCertificate(actor, targetUserId ?? actor.id, year);
   await recordAudit({ action: 'taxcert.download', actorId: actor.id, actorLabel: actor.email, targetType: 'User', targetId: cert.userId, meta: { year: cert.taxYearLabel } });
-  return { buffer: await generateCertificatePdf(cert), filename: `tax-certificate-${cert.taxYearLabel}.pdf` };
+  return { buffer: await generateCertificatePdf(cert, await getCompanyProfile()), filename: `tax-certificate-${cert.taxYearLabel}.pdf` };
 }

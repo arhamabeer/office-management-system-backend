@@ -7,6 +7,7 @@ const companyProfileSchema = new Schema(
     key: { type: String, default: 'default', unique: true },
     companyName: { type: String },
     website: { type: String },
+    email: { type: String },
     address: { type: String },
     phone: { type: String },
     tagline: { type: String },

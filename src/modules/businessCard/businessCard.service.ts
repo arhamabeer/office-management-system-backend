@@ -10,12 +10,10 @@ import { EmployeeProfile } from '../employees/employeeProfile.model';
 import { Department } from '../departments/department.model';
 import { recordAudit } from '../../middleware/audit';
 import { NotFoundError } from '../../common/errors';
+import { drawLogo, toBuffer } from '../../common/pdfBrand';
 
-const ORANGE = BRAND.colors.orange;
-const STRONG = '#C2410C'; // legible accent for TEXT — bright orange fails WCAG on white
-const GRAY = '#64748b';
+const ORANGE = BRAND.colors.orange; // #FC6810
 const INK = '#0f172a';
-const HAIR = '#E5E7EB';
 
 // ---------------------------------------------------------------- company config
 
@@ -23,6 +21,7 @@ function companyDTO(c: CompanyProfileDoc): CompanyProfileDTO {
   return {
     companyName: c.companyName || BRAND.name,
     website: c.website ?? undefined,
+    email: c.email ?? undefined,
     address: c.address ?? undefined,
     phone: c.phone ?? undefined,
     tagline: c.tagline ?? undefined,
@@ -126,76 +125,81 @@ export async function getVCard(actor: AuthUser): Promise<{ vcard: string; filena
   return { vcard: buildVCard(employee, company), filename: `${safe}.vcf` };
 }
 
-function toBuffer(doc: PDFKit.PDFDocument): Promise<Buffer> {
-  return new Promise((resolve, reject) => {
-    const chunks: Buffer[] = [];
-    doc.on('data', (c: Buffer) => chunks.push(c));
-    doc.on('end', () => resolve(Buffer.concat(chunks)));
-    doc.on('error', reject);
-    doc.end();
-  });
-}
+const stripProto = (u?: string): string => (u ?? '').replace(/^https?:\/\//, '').replace(/\/$/, '');
 
+/**
+ * Two-sided business card matching the BrainCrop template:
+ *  FRONT — white, logo on the left, employee + company details on the right as a
+ *          label:value contact block, with a thin orange bar down the right edge.
+ *  BACK  — solid brand orange.
+ */
 export async function getCardPdf(actor: AuthUser): Promise<{ buffer: Buffer; filename: string }> {
   const { employee, company } = await cardFor(actor);
-  const vcard = buildVCard(employee, company);
-  const qrPng = await QRCode.toBuffer(vcard, { margin: 1, width: 220, color: { dark: INK, light: '#ffffff' } });
 
-  const W = 520;
+  // 3.5" x 2" business card, scaled up for a crisp on-screen/print rendering.
+  const W = 525;
   const H = 300;
-  const PAD = 40;
-  const COL = 300; // left text column — leaves a clear rail for the QR
+  const PAD = 34;
+  const BAR = 9; // orange right-edge rail
+
+  const NAME = '#4B4B4B';
+  const TITLE = '#7C7C7C';
+  const BODY = '#6B7280';
+  const LABEL = '#9AA0A6';
+
   const doc = new PDFDocument({ size: [W, H], margin: 0 });
 
-  // Flat white card with a single orange spine — no filled header band.
+  // ---- FRONT ----
   doc.rect(0, 0, W, H).fill('#ffffff');
-  doc.rect(0, 0, 5, H).fill(ORANGE);
+  doc.rect(W - BAR, 0, BAR, H).fill(ORANGE);
 
-  // Company wordmark at the top (stands in for the logo).
-  doc
-    .fillColor(INK)
-    .font('Helvetica-Bold')
-    .fontSize(13)
-    .text(company.companyName.toUpperCase(), PAD, 34, { characterSpacing: 0.8, width: COL });
+  // Logo on the left, vertically centred in the left column.
+  const logoW = 188;
+  const logoH = logoW * (252 / 1024);
+  drawLogo(doc, PAD, (H - logoH) / 2, logoW);
 
-  // Name (hero) → role (accent) → department, tightly grouped.
-  doc.fillColor(INK).font('Helvetica-Bold').fontSize(24).text(employee.fullName, PAD, 84, { width: COL });
-  let y = doc.y + 6;
+  // Right column.
+  const RX = 250;
+  const RW = W - RX - PAD - BAR;
+  let y = 44;
+
+  doc.font('Helvetica-Bold').fontSize(22).fillColor(NAME).text(employee.fullName.toUpperCase(), RX, y, { width: RW });
+  y = doc.y + 3;
   if (employee.designation) {
-    doc.fillColor(STRONG).font('Helvetica-Bold').fontSize(12).text(employee.designation, PAD, y, { width: COL });
-    y = doc.y + 2;
-  }
-  if (employee.department) {
-    doc.fillColor(GRAY).font('Helvetica').fontSize(10.5).text(employee.department, PAD, y, { width: COL });
+    doc.font('Helvetica').fontSize(12).fillColor(TITLE).text(employee.designation, RX, y, { width: RW });
     y = doc.y;
   }
 
-  // Hairline divider.
+  // Address block (one line per comma-separated segment).
+  if (company.address) {
+    y += 14;
+    const lines = company.address.split(',').map((s) => s.trim()).filter(Boolean);
+    doc.font('Helvetica').fontSize(10).fillColor(BODY);
+    for (const ln of lines) {
+      doc.text(ln, RX, y, { width: RW });
+      y = doc.y + 1;
+    }
+  }
+
+  // Contact block: aligned "Label : value" rows.
+  const rows: [string, string][] = [];
+  if (company.phone) rows.push(['Phone', company.phone]);
+  if (employee.phone) rows.push(['Mobile', employee.phone]);
+  rows.push(['Email', employee.email]);
+  if (company.website) rows.push(['Web', stripProto(company.website)]);
+
   y += 14;
-  doc.lineWidth(1).moveTo(PAD, y).lineTo(PAD + COL - 40, y).stroke(HAIR);
+  const labelW = 46;
+  for (const [label, value] of rows) {
+    doc.font('Helvetica').fontSize(10).fillColor(LABEL).text(label, RX, y, { width: labelW });
+    doc.fillColor(LABEL).text(':', RX + labelW, y, { width: 8 });
+    doc.fillColor(BODY).text(value, RX + labelW + 12, y, { width: RW - labelW - 12 });
+    y = doc.y + 3;
+  }
 
-  // Contact — clean value-only lines (no label column).
-  y += 18;
-  doc.font('Helvetica').fontSize(11).fillColor('#334155').text(employee.email, PAD, y, { width: COL });
-  const phone = employee.phone ?? company.phone;
-  if (phone) doc.text(phone, PAD, doc.y + 6, { width: COL });
-
-  // Quiet colophon pinned near the bottom.
-  const colophon = [company.website, company.address].filter(Boolean).join('   ·   ');
-  if (colophon) doc.fillColor(GRAY).font('Helvetica').fontSize(9).text(colophon, PAD, H - 30, { width: COL });
-
-  // QR seated in a bordered panel on the right, vertically centred.
-  const qrSize = 112;
-  const panel = qrSize + 18;
-  const px = W - 36 - panel;
-  const py = (H - panel - 20) / 2;
-  doc.roundedRect(px, py, panel, panel, 10).lineWidth(1).fillAndStroke('#ffffff', HAIR);
-  doc.image(qrPng, px + 9, py + 9, { width: qrSize, height: qrSize });
-  doc
-    .fillColor(GRAY)
-    .font('Helvetica-Bold')
-    .fontSize(7)
-    .text('SCAN TO SAVE CONTACT', px, py + panel + 8, { width: panel, align: 'center', characterSpacing: 1 });
+  // ---- BACK ----
+  doc.addPage({ size: [W, H], margin: 0 });
+  doc.rect(0, 0, W, H).fill(ORANGE);
 
   const buffer = await toBuffer(doc);
   const safe = employee.fullName.replace(/[^a-z0-9]+/gi, '-').toLowerCase() || 'card';

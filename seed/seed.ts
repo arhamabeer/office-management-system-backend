@@ -141,10 +141,11 @@ async function seedCompanyProfile(): Promise<void> {
   await CompanyProfile.updateOne(
     { key: 'default' },
     {
-      $setOnInsert: {
-        key: 'default',
+      $set: {
         companyName: 'BrainCrop',
         website: 'https://braincrop.io',
+        email: 'info@braincrop.io',
+        address: 'Office 706, Ibrahim Trade Tower, Shahrah e Faisal, Block 7/8, Karachi 75350',
         tagline: 'Smart software for growing teams.',
       },
     },

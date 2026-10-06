@@ -1,7 +1,8 @@
-/** Configurable company details shown on every employee business card. */
+/** Configurable company details shown on business cards & document letterheads. */
 export interface CompanyProfileDTO {
   companyName: string;
   website?: string;
+  email?: string;
   address?: string;
   phone?: string;
   tagline?: string;

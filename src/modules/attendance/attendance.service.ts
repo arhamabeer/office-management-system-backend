@@ -55,6 +55,7 @@ import {
 } from './attendance.util';
 import { summariseWeeks, recentWeekStarts, WEEKS_BACK } from './attendance.report';
 import { buildReportPdf, buildReportXlsx, type ReportDetailRow } from './attendance.export';
+import { getCompanyProfile } from '../businessCard/businessCard.service';
 import { sendAbsenceEmail } from '../../common/mailer';
 import { notify } from '../../common/notify';
 import { logger } from '../../common/logger';
@@ -530,7 +531,7 @@ export async function getReportExport(
   });
   const base = `attendance-report-${report.start}_to_${report.end}`;
   if (query.format === 'pdf') {
-    return { buffer: await buildReportPdf(report), filename: `${base}.pdf`, contentType: 'application/pdf' };
+    return { buffer: await buildReportPdf(report, await getCompanyProfile()), filename: `${base}.pdf`, contentType: 'application/pdf' };
   }
   return {
     buffer: await buildReportXlsx(report, detail),

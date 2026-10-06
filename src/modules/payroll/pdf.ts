@@ -1,30 +1,13 @@
 import PDFDocument from 'pdfkit';
-import { BRAND } from '@ems/config';
-import type { PayslipDTO, TaxCertificateDTO } from '@ems/types';
+import type { PayslipDTO, TaxCertificateDTO, CompanyProfileDTO } from '@ems/types';
+import { PDF, drawLetterhead, drawDocTitle, toBuffer } from '../../common/pdfBrand';
 
-const ORANGE = '#FC6810';
-const GRAY = '#6B7280';
-const DARK = '#111827';
+const ORANGE = PDF.orange;
+const GRAY = PDF.gray;
+const DARK = PDF.ink;
 
 function money(n: number, cur: string): string {
   return `${cur} ${new Intl.NumberFormat('en-US').format(Math.round(n))}`;
-}
-
-function toBuffer(doc: PDFKit.PDFDocument): Promise<Buffer> {
-  return new Promise((resolve, reject) => {
-    const chunks: Buffer[] = [];
-    doc.on('data', (c: Buffer) => chunks.push(c));
-    doc.on('end', () => resolve(Buffer.concat(chunks)));
-    doc.on('error', reject);
-    doc.end();
-  });
-}
-
-function header(doc: PDFKit.PDFDocument, subtitle: string): void {
-  doc.fontSize(22).fillColor(ORANGE).text(BRAND.productName, 50, 50, { continued: false });
-  doc.fillColor(DARK).fontSize(12).text(subtitle, 50, 78);
-  doc.moveTo(50, 100).lineTo(545, 100).strokeColor('#E5E7EB').stroke();
-  doc.moveDown(2);
 }
 
 function kv(doc: PDFKit.PDFDocument, label: string, value: string, y: number): void {
@@ -32,11 +15,11 @@ function kv(doc: PDFKit.PDFDocument, label: string, value: string, y: number): v
   doc.fillColor(DARK).text(value, 250, y);
 }
 
-export async function generatePayslipPdf(p: PayslipDTO): Promise<Buffer> {
+export async function generatePayslipPdf(p: PayslipDTO, company: CompanyProfileDTO): Promise<Buffer> {
   const doc = new PDFDocument({ size: 'A4', margin: 50 });
-  header(doc, `Payslip — ${p.month}`);
+  let y = drawLetterhead(doc, company);
+  y = drawDocTitle(doc, 'Payslip', y, p.month);
 
-  let y = 120;
   kv(doc, 'Employee', p.employeeName ?? p.userId, y);
   y += 18;
   kv(doc, 'Pay period', p.month, y);
@@ -54,7 +37,7 @@ export async function generatePayslipPdf(p: PayslipDTO): Promise<Buffer> {
   line('Income tax', p.taxMonthly);
   y += 6;
 
-  doc.rect(50, y, 495, 30).fill('#F1F3F5');
+  doc.rect(50, y, 495, 30).fill(PDF.panel);
   doc.fillColor(DARK).fontSize(13).text('Net pay', 60, y + 8).text(money(p.netPay, p.currency), 400, y + 8, { width: 135, align: 'right' });
   y += 50;
 
@@ -69,11 +52,11 @@ export async function generatePayslipPdf(p: PayslipDTO): Promise<Buffer> {
   return toBuffer(doc);
 }
 
-export async function generateCertificatePdf(c: TaxCertificateDTO): Promise<Buffer> {
+export async function generateCertificatePdf(c: TaxCertificateDTO, company: CompanyProfileDTO): Promise<Buffer> {
   const doc = new PDFDocument({ size: 'A4', margin: 50 });
-  header(doc, `Tax Certificate — Tax Year ${c.taxYearLabel}`);
+  let y = drawLetterhead(doc, company);
+  y = drawDocTitle(doc, 'Tax Certificate', y, `Tax Year ${c.taxYearLabel}`);
 
-  let y = 120;
   kv(doc, 'Employee', c.employeeName, y);
   y += 18;
   kv(doc, 'Tax year', c.taxYearLabel, y);

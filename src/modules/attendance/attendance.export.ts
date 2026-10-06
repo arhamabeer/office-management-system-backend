@@ -1,7 +1,8 @@
 import PDFDocument from 'pdfkit';
 import ExcelJS from 'exceljs';
 import { BRAND } from '@ems/config';
-import type { AttendanceReportDTO, AttendanceReportRowDTO } from '@ems/types';
+import type { AttendanceReportDTO, AttendanceReportRowDTO, CompanyProfileDTO } from '@ems/types';
+import { drawLetterhead, drawDocTitle } from '../../common/pdfBrand';
 
 const ORANGE = '#FC6810';
 const GRAY = '#6B7280';
@@ -25,7 +26,7 @@ function hoursDec(mins: number): number {
   return Math.round((mins / 60) * 100) / 100;
 }
 
-export function buildReportPdf(report: AttendanceReportDTO): Promise<Buffer> {
+export function buildReportPdf(report: AttendanceReportDTO, company: CompanyProfileDTO): Promise<Buffer> {
   const doc = new PDFDocument({ size: 'A4', margin: 50 });
   const chunks: Buffer[] = [];
   const done = new Promise<Buffer>((resolve, reject) => {
@@ -34,15 +35,13 @@ export function buildReportPdf(report: AttendanceReportDTO): Promise<Buffer> {
     doc.on('error', reject);
   });
 
-  doc.fontSize(22).fillColor(ORANGE).text(BRAND.productName, 50, 50);
-  doc.fillColor(DARK).fontSize(12).text('Attendance Report', 50, 78);
-  doc
-    .fontSize(10)
-    .fillColor(GRAY)
-    .text(`Period: ${report.start} to ${report.end}   ·   Weekly minimum: ${hm(report.weeklyMinimumMinutes)}`, 50, 96);
-  doc.moveTo(50, 114).lineTo(545, 114).strokeColor('#E5E7EB').stroke();
-
-  let y = 132;
+  let y = drawLetterhead(doc, company);
+  y = drawDocTitle(
+    doc,
+    'Attendance Report',
+    y,
+    `${report.start} to ${report.end}  ·  Weekly minimum ${hm(report.weeklyMinimumMinutes)}`,
+  );
   const drawMini = (title: string, rows: AttendanceReportRowDTO[], color: string): void => {
     doc.fontSize(12).fillColor(color).text(title, 50, y);
     y += 18;
