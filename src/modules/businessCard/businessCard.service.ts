@@ -153,10 +153,9 @@ export async function getCardPdf(actor: AuthUser): Promise<{ buffer: Buffer; fil
   doc.rect(0, 0, W, H).fill('#ffffff');
   doc.rect(W - BAR, 0, BAR, H).fill(ORANGE);
 
-  // Logo on the left, vertically centred in the left column.
+  // Logo at the top-left, aligned with the name (per the brand template).
   const logoW = 188;
-  const logoH = logoW * (252 / 1024);
-  drawLogo(doc, PAD, (H - logoH) / 2, logoW);
+  drawLogo(doc, PAD, 42, logoW);
 
   // Right column.
   const RX = 250;
