@@ -19,6 +19,14 @@ export const deleteHandler = asyncHandler(async (req, res) => {
   sendOk(res, { success: true });
 });
 
+export const approveHandler = asyncHandler(async (req, res) => {
+  sendOk(res, await service.approveAnnouncement(req.user!, req.params.id));
+});
+
+export const rejectHandler = asyncHandler(async (req, res) => {
+  sendOk(res, await service.rejectAnnouncement(req.user!, req.params.id, req.body?.note));
+});
+
 export const markReadHandler = asyncHandler(async (req, res) => {
   await service.markRead(req.user!, req.params.id);
   sendOk(res, { success: true });

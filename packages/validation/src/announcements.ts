@@ -22,3 +22,9 @@ export const updateAnnouncementSchema = z
   })
   .refine((v) => Object.keys(v).length > 0, { message: 'No changes supplied' });
 export type UpdateAnnouncementInput = z.infer<typeof updateAnnouncementSchema>;
+
+/** Reject a pending (manager-posted) notice, with an optional reason. */
+export const rejectAnnouncementSchema = z.object({
+  note: z.string().trim().max(500).optional(),
+});
+export type RejectAnnouncementInput = z.infer<typeof rejectAnnouncementSchema>;

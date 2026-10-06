@@ -8,6 +8,8 @@ import {
   listAnnouncements,
   updateAnnouncement,
   deleteAnnouncement,
+  approveAnnouncement,
+  rejectAnnouncement,
   markAllRead,
 } from '../src/modules/announcements/announcement.service';
 import { unreadCount } from '../src/modules/notifications/notification.service';
@@ -35,6 +37,8 @@ beforeAll(async () => {
   await mongoose.connect(mongod.getUri());
   await makeUser('owner', 'Owner', 'Admin');
   await makeUser('member', 'Employee', 'Member');
+  await makeUser('manager', 'Employee', 'Manager');
+  await makeUser('ops', 'Employee', 'Operations');
 }, 120_000);
 
 afterAll(async () => {
@@ -87,5 +91,37 @@ describe('announcements', () => {
     expect(updated.pinned).toBe(true);
     await deleteAnnouncement(actor.owner, a.id);
     expect((await listAnnouncements(actor.owner)).find((x) => x.id === a.id)).toBeUndefined();
+  });
+});
+
+describe('announcement approval flow', () => {
+  it('holds a manager submission as Pending until approved, hidden from staff', async () => {
+    const sub = await createAnnouncement(actor.manager, { title: 'Team offsite', body: 'Planning an offsite.' });
+    expect(sub.status).toBe('Pending');
+    // A plain member does not see a pending notice; the author and Operations do.
+    expect((await listAnnouncements(actor.member)).find((x) => x.title === 'Team offsite')).toBeUndefined();
+    expect((await listAnnouncements(actor.manager)).find((x) => x.title === 'Team offsite')?.status).toBe('Pending');
+    expect((await listAnnouncements(actor.ops)).find((x) => x.title === 'Team offsite')?.status).toBe('Pending');
+
+    const approved = await approveAnnouncement(actor.ops, sub.id);
+    expect(approved.status).toBe('Published');
+    // Now everyone sees it.
+    expect((await listAnnouncements(actor.member)).find((x) => x.title === 'Team offsite')?.status).toBe('Published');
+  });
+
+  it('lets operations reject a submission with a reason the author can see', async () => {
+    const sub = await createAnnouncement(actor.manager, { title: 'Casual Friday', body: 'Proposal' });
+    const rejected = await rejectAnnouncement(actor.ops, sub.id, 'Check with HR first');
+    expect(rejected.status).toBe('Rejected');
+    expect(rejected.decisionNote).toBe('Check with HR first');
+    expect((await listAnnouncements(actor.manager)).find((x) => x.title === 'Casual Friday')?.decisionNote).toBe('Check with HR first');
+    // Non-authors never see a rejected notice.
+    expect((await listAnnouncements(actor.member)).find((x) => x.title === 'Casual Friday')).toBeUndefined();
+  });
+
+  it('forbids a manager from approving and a member from posting', async () => {
+    const sub = await createAnnouncement(actor.manager, { title: 'Another', body: 'x' });
+    await expect(approveAnnouncement(actor.manager, sub.id)).rejects.toThrow();
+    await expect(createAnnouncement(actor.member, { title: 'No', body: 'x' })).rejects.toThrow();
   });
 });
