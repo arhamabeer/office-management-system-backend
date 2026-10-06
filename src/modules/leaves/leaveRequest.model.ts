@@ -1,5 +1,5 @@
 import { Schema, model, type InferSchemaType, type HydratedDocument } from 'mongoose';
-import { LEAVE_REQUEST_STATUSES } from '@ems/types';
+import { LEAVE_REQUEST_STATUSES, REQUEST_ROUTE_TARGETS } from '@ems/types';
 
 /** A leave application and its approval state (PLAN.md §7, §9). */
 const leaveRequestSchema = new Schema(
@@ -13,6 +13,9 @@ const leaveRequestSchema = new Schema(
     days: { type: Number, required: true },
     reason: { type: String, required: true },
     status: { type: String, enum: LEAVE_REQUEST_STATUSES, default: 'Pending', index: true },
+    // Empty = still at the manager stage; set once a manager forwards to the
+    // Operations/Admin handler queue(s).
+    routedTo: { type: [{ type: String, enum: REQUEST_ROUTE_TARGETS }], default: [] },
     approverId: { type: Schema.Types.ObjectId, ref: 'User' },
     decidedById: { type: Schema.Types.ObjectId, ref: 'User' },
     decidedAt: { type: Date },

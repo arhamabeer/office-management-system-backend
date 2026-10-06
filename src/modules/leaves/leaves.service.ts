@@ -11,7 +11,9 @@ import type {
   UpdateLeaveTypeInput,
   UpdateLeavePolicyInput,
   ApplyLeaveInput,
+  LeaveForwardInput,
 } from '@ems/validation';
+import type { RequestRouteTarget } from '@ems/types';
 import type { AuthUser } from '../../middleware/auth';
 import { LeaveType, type LeaveTypeDoc } from './leaveType.model';
 import { LeavePolicy, type LeavePolicyDoc } from './leavePolicy.model';
@@ -27,8 +29,15 @@ import {
   leaveYearOf,
 } from './leaves.util';
 import { scopedUserIds } from '../../common/scope';
+import {
+  capsFor,
+  canActOnPending,
+  buildPendingInboxFilter,
+  handlerUserIds,
+  displayName,
+} from '../../common/requestWorkflow';
 import { recordAudit } from '../../middleware/audit';
-import { notify } from '../../common/notify';
+import { notify, notifyMany } from '../../common/notify';
 import { buildXlsx } from '../../common/xlsx';
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from '../../common/errors';
 
@@ -73,6 +82,7 @@ function reqDTO(r: LeaveRequestDoc, type?: { name: string; code: string }, emplo
     days: r.days,
     reason: r.reason,
     status: r.status as LeaveRequestStatus,
+    routedTo: (r.routedTo ?? []) as RequestRouteTarget[],
     approverId: r.approverId ? String(r.approverId) : undefined,
     decidedById: r.decidedById ? String(r.decidedById) : undefined,
     decidedAt: r.decidedAt ? r.decidedAt.toISOString() : undefined,
@@ -296,16 +306,18 @@ export async function listRequests(
   scope: 'mine' | 'pending' | 'team',
   year?: number,
 ): Promise<LeaveRequestDTO[]> {
-  const filter: Record<string, unknown> = {};
+  let filter: Record<string, unknown>;
   if (scope === 'mine') {
-    filter.userId = actor.id;
-    if (year) filter.year = year;
+    filter = { userId: actor.id };
+  } else if (scope === 'pending') {
+    // Manager-stage items in scope + the Operations/Admin queues this actor staffs.
+    filter = await buildPendingInboxFilter(actor);
   } else {
+    // 'team' — everything in the actor's scope.
     const { orgWide, ids } = await scopedUserIds(actor);
-    if (!orgWide) filter.userId = { $in: ids };
-    if (scope === 'pending') filter.status = 'Pending';
-    if (year) filter.year = year;
+    filter = orgWide ? {} : { userId: { $in: ids } };
   }
+  if (year) filter.year = year;
   const docs = await LeaveRequest.find(filter).sort({ createdAt: -1 });
   const [types, names] = await Promise.all([typeMap(), nameMap(docs.map((d) => d.userId))]);
   return docs.map((d) => reqDTO(d, types.get(String(d.typeId)), names.get(String(d.userId))));
@@ -397,10 +409,17 @@ export async function decideRequest(
   if (!req) throw new NotFoundError('Leave request not found');
   if (req.status !== 'Pending') throw new ConflictError('This request has already been decided');
 
-  const { orgWide, ids } = await scopedUserIds(actor);
-  const inScope = orgWide || ids.some((i) => String(i) === String(req.userId));
-  if (!inScope) throw new ForbiddenError('This request is outside your team');
-  if (String(req.userId) === actor.id && !orgWide) throw new ForbiddenError('You cannot approve your own request');
+  const routedTo = (req.routedTo ?? []) as RequestRouteTarget[];
+  const isOwnerAdmin = actor.accountType === 'Owner' || actor.orgRole === 'Admin';
+  if (String(req.userId) === actor.id && !isOwnerAdmin) {
+    throw new ForbiddenError('You cannot approve your own request');
+  }
+  const caps = await capsFor(actor, String(req.userId));
+  if (!canActOnPending(caps, routedTo)) {
+    throw new ForbiddenError(
+      routedTo.length ? 'This request is not in your queue' : 'Only a manager for this request can decide it',
+    );
+  }
 
   if (approve) {
     req.status = 'Approved';
@@ -452,5 +471,48 @@ export async function decideRequest(
     link: '/leaves',
     email: true,
   });
+  return reqDTO(req, types.get(String(req.typeId)));
+}
+
+/** A manager forwards a pending leave to the Operations/Admin handler queue(s). */
+export async function forwardRequest(actor: AuthUser, id: string, input: LeaveForwardInput): Promise<LeaveRequestDTO> {
+  const req = await LeaveRequest.findById(id);
+  if (!req) throw new NotFoundError('Leave request not found');
+  if (req.status !== 'Pending') throw new ConflictError('This request has already been decided');
+  if ((req.routedTo ?? []).length) throw new ConflictError('This request has already been forwarded');
+
+  if (String(req.userId) === actor.id && !(actor.accountType === 'Owner' || actor.orgRole === 'Admin')) {
+    throw new ForbiddenError('You cannot forward your own request');
+  }
+  const caps = await capsFor(actor, String(req.userId));
+  if (!caps.canManage) throw new ForbiddenError('Only a manager for this request can forward it');
+
+  const targets = [...new Set(input.targets)] as RequestRouteTarget[];
+  req.routedTo = targets;
+  if (input.comment) req.comment = input.comment;
+  await req.save();
+
+  await recordAudit({
+    action: 'leave.forwarded',
+    actorId: actor.id,
+    actorLabel: actor.email,
+    targetType: 'LeaveRequest',
+    targetId: String(req._id),
+    meta: { targets },
+  });
+
+  const types = await typeMap();
+  const who = (await displayName(String(req.userId))) ?? 'an employee';
+  await notifyMany(
+    await handlerUserIds(targets),
+    {
+      type: 'approval.pending',
+      title: 'Leave request forwarded to you',
+      body: `A ${types.get(String(req.typeId))?.name ?? 'leave'} request from ${who} (${req.startDate} to ${req.endDate}) was forwarded for your decision.`,
+      link: '/approvals',
+      email: true,
+    },
+    actor.id,
+  );
   return reqDTO(req, types.get(String(req.typeId)));
 }

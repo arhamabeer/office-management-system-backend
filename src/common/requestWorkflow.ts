@@ -152,6 +152,49 @@ export function actorRoleLabel(actor: AuthUser): string {
   return actor.accountType === 'Owner' ? 'Owner' : actor.orgRole;
 }
 
+/**
+ * Inbox filter for Pending-status collections that also support manager →
+ * Operations/Admin forwarding (leave requests and attendance regularizations).
+ * A manager sees Pending items in their scope that are NOT yet forwarded
+ * (routedTo empty); Operations/Admin see Pending items forwarded to their queue.
+ * Mirrors `buildInboxFilter` but keyed on 'Pending' + routedTo.
+ */
+export async function buildPendingInboxFilter(actor: AuthUser): Promise<Record<string, unknown>> {
+  const admin = isOrgAdmin(actor);
+  const isOps = admin || actor.orgRole === 'Operations';
+  const canManage = admin || isAtLeast(actor.orgRole, 'Lead');
+  const or: Record<string, unknown>[] = [];
+  if (canManage) {
+    const mgr: Record<string, unknown> = {
+      status: 'Pending',
+      $or: [{ routedTo: { $size: 0 } }, { routedTo: { $exists: false } }],
+    };
+    if (!admin) {
+      const { ids } = await scopedUserIds(actor);
+      mgr.userId = { $in: ids.filter((i) => String(i) !== actor.id) };
+    }
+    or.push(mgr);
+  }
+  if (isOps) or.push({ status: 'Pending', routedTo: 'Operations' });
+  if (admin) or.push({ status: 'Pending', routedTo: 'Admin' });
+  return or.length ? { $or: or } : { _id: { $exists: false } };
+}
+
+/** Whether `caps` may decide a Pending item with the given routing: at the
+ *  manager stage (no routing) a manager; once forwarded, the staffed queue. */
+export function canActOnPending(caps: RequestActorCaps, routedTo?: RequestRouteTarget[]): boolean {
+  if (!routedTo || routedTo.length === 0) return caps.canManage;
+  return (
+    (routedTo.includes('Operations') && caps.canActOps) ||
+    (routedTo.includes('Admin') && caps.canActAdmin)
+  );
+}
+
+/** Are there any active users staffing the Operations queue? */
+export async function hasOperationsStaff(): Promise<boolean> {
+  return (await User.exists({ status: 'Active', orgRole: 'Operations' })) != null;
+}
+
 // ---------------------------------------------------------------- recipients (DB)
 
 /** Active user ids staffing the given handler queues (Admin queue includes Owners). */

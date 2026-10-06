@@ -1,4 +1,4 @@
-import type { LeaveRequestStatus } from './enums';
+import type { LeaveRequestStatus, RequestRouteTarget } from './enums';
 
 export interface LeaveTypeDTO {
   id: string;
@@ -44,6 +44,8 @@ export interface LeaveRequestDTO {
   days: number;
   reason: string;
   status: LeaveRequestStatus;
+  /** Handler queues this request has been forwarded to (empty = manager stage). */
+  routedTo: RequestRouteTarget[];
   approverId?: string;
   decidedById?: string;
   decidedAt?: string;

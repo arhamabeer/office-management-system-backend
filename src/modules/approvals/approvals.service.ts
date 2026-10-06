@@ -4,26 +4,22 @@ import { Regularization } from '../attendance/regularization.model';
 import { LeaveRequest } from '../leaves/leaveRequest.model';
 import { Complaint } from '../complaints/complaint.model';
 import { InventoryRequest } from '../inventoryRequests/inventoryRequest.model';
-import { scopedUserIds } from '../../common/scope';
-import { buildInboxFilter } from '../../common/requestWorkflow';
+import { buildInboxFilter, buildPendingInboxFilter } from '../../common/requestWorkflow';
 
 /**
  * Count the items awaiting the actor's decision, using the SAME scope + status
  * filters as each module's pending list, so the badge always matches what the
- * inboxes show (PLAN.md §9). Leaves/regularizations use the simple Pending+scope
- * filter; complaints/inventory use the shared request-workflow inbox filter
- * (manager-stage items in scope + Operations/Admin handler queues).
+ * inboxes show (PLAN.md §9). Leaves/regularizations use the Pending inbox filter
+ * (manager-stage items in scope, not yet forwarded, + the Operations/Admin
+ * queues the actor staffs); complaints/inventory use the Submitted/Forwarded one.
  */
 export async function countPending(actor: AuthUser): Promise<ApprovalsCountDTO> {
-  const { orgWide, ids } = await scopedUserIds(actor);
-  const pendingFilter: Record<string, unknown> = { status: 'Pending' };
-  if (!orgWide) pendingFilter.userId = { $in: ids };
-
+  const pendingInbox = await buildPendingInboxFilter(actor);
   const inbox = await buildInboxFilter(actor);
 
   const [regularizations, leaves, complaints, inventoryRequests] = await Promise.all([
-    Regularization.countDocuments(pendingFilter),
-    LeaveRequest.countDocuments(pendingFilter),
+    Regularization.countDocuments(pendingInbox),
+    LeaveRequest.countDocuments(pendingInbox),
     Complaint.countDocuments(inbox),
     InventoryRequest.countDocuments(inbox),
   ]);

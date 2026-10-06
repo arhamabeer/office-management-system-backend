@@ -3,6 +3,7 @@ import type {
   AttendanceSource,
   LeaveRequestStatus,
   RegularizationKind,
+  RequestRouteTarget,
   BiometricDeviceStatus,
 } from './enums';
 
@@ -172,6 +173,8 @@ export interface RegularizationDTO {
   requestedCheckOutAt?: string;
   reason: string;
   status: LeaveRequestStatus;
+  /** Handler queues this request is routed to (empty = a specific manager). */
+  routedTo: RequestRouteTarget[];
   approverId?: string;
   decidedById?: string;
   decidedAt?: string;

@@ -57,7 +57,15 @@ import { summariseWeeks, recentWeekStarts, WEEKS_BACK } from './attendance.repor
 import { buildReportPdf, buildReportXlsx, type ReportDetailRow } from './attendance.export';
 import { getCompanyProfile } from '../businessCard/businessCard.service';
 import { sendAbsenceEmail } from '../../common/mailer';
-import { notify } from '../../common/notify';
+import { notify, notifyMany } from '../../common/notify';
+import {
+  capsFor,
+  canActOnPending,
+  buildPendingInboxFilter,
+  handlerUserIds,
+  hasOperationsStaff,
+} from '../../common/requestWorkflow';
+import type { RequestRouteTarget } from '@ems/types';
 import { logger } from '../../common/logger';
 import { pageMeta } from '../../common/httpResponse';
 import { recordAudit } from '../../middleware/audit';
@@ -93,6 +101,7 @@ function toRegDTO(r: RegularizationDoc, employeeName?: string): RegularizationDT
     requestedCheckOutAt: r.requestedCheckOutAt ? r.requestedCheckOutAt.toISOString() : undefined,
     reason: r.reason,
     status: r.status as RegularizationDTO['status'],
+    routedTo: (r.routedTo ?? []) as RequestRouteTarget[],
     approverId: r.approverId ? String(r.approverId) : undefined,
     decidedById: r.decidedById ? String(r.decidedById) : undefined,
     decidedAt: r.decidedAt ? r.decidedAt.toISOString() : undefined,
@@ -764,6 +773,13 @@ export async function createRegularization(
   const profile = await EmployeeProfile.findOne({ userId }).select('reportsToId firstName lastName');
   const kind = input.kind ?? 'Correction';
   const isDeviceDown = kind === 'DeviceDown';
+
+  // Attendance goes straight to Operations when any Operations user exists;
+  // otherwise it falls back to the employee's manager, then to Admin.
+  const opsStaffed = await hasOperationsStaff();
+  const routedTo: RequestRouteTarget[] = opsStaffed ? ['Operations'] : profile?.reportsToId ? [] : ['Admin'];
+  const approverId = opsStaffed ? undefined : (profile?.reportsToId ?? undefined);
+
   const doc = await Regularization.create({
     userId,
     kind,
@@ -771,21 +787,20 @@ export async function createRegularization(
     requestedCheckInAt: input.checkInAt,
     requestedCheckOutAt: input.checkOutAt,
     reason: input.reason,
-    approverId: profile?.reportsToId ?? undefined,
+    routedTo,
+    approverId,
     status: 'Pending',
   });
-  if (profile?.reportsToId) {
-    const who = `${profile.firstName ?? ''} ${profile.lastName ?? ''}`.trim() || 'An employee';
-    await notify({
-      userId: String(profile.reportsToId),
-      type: 'approval.pending',
-      title: isDeviceDown ? 'Attendance submission to review' : 'Attendance correction to review',
-      body: isDeviceDown
-        ? `${who} submitted attendance for ${input.date} (device was down).`
-        : `${who} requested a correction for ${input.date}.`,
-      link: '/approvals',
-      email: true,
-    });
+
+  const who = `${profile?.firstName ?? ''} ${profile?.lastName ?? ''}`.trim() || 'An employee';
+  const title = isDeviceDown ? 'Attendance submission to review' : 'Attendance correction to review';
+  const body = isDeviceDown
+    ? `${who} submitted attendance for ${input.date} (device was down).`
+    : `${who} requested a correction for ${input.date}.`;
+  if (routedTo.length) {
+    await notifyMany(await handlerUserIds(routedTo), { type: 'approval.pending', title, body, link: '/approvals', email: true }, userId);
+  } else if (approverId) {
+    await notify({ userId: String(approverId), type: 'approval.pending', title, body, link: '/approvals', email: true });
   }
   return toRegDTO(doc);
 }
@@ -798,10 +813,8 @@ export async function listRegularizations(
     const docs = await Regularization.find({ userId: actor.id }).sort({ createdAt: -1 });
     return docs.map((d) => toRegDTO(d));
   }
-  // pending for approver: requests in the actor's team scope
-  const { orgWide, ids } = await scopedUserIds(actor);
-  const filter: Record<string, unknown> = { status: 'Pending' };
-  if (!orgWide) filter.userId = { $in: ids };
+  // Operations queue + manager-fallback items in the actor's scope.
+  const filter = await buildPendingInboxFilter(actor);
   const docs = await Regularization.find(filter).sort({ createdAt: -1 });
   const names = await nameMap(docs.map((d) => d.userId));
   return docs.map((d) => toRegDTO(d, names.get(String(d.userId))?.name));
@@ -817,11 +830,16 @@ export async function decideRegularization(
   if (!req) throw new NotFoundError('Regularization request not found');
   if (req.status !== 'Pending') throw new ConflictError('This request has already been decided');
 
-  const { orgWide, ids } = await scopedUserIds(actor);
-  const inScope = orgWide || ids.some((i) => String(i) === String(req.userId));
-  if (!inScope) throw new ForbiddenError('This request is outside your team');
-  if (String(req.userId) === actor.id && !orgWide) {
+  const routedTo = (req.routedTo ?? []) as RequestRouteTarget[];
+  const isOwnerAdmin = actor.accountType === 'Owner' || actor.orgRole === 'Admin';
+  if (String(req.userId) === actor.id && !isOwnerAdmin) {
     throw new ForbiddenError('You cannot approve your own request');
+  }
+  const caps = await capsFor(actor, String(req.userId));
+  if (!canActOnPending(caps, routedTo)) {
+    throw new ForbiddenError(
+      routedTo.length ? 'This request is not in your queue' : 'This request is outside your team',
+    );
   }
 
   if (approve) {

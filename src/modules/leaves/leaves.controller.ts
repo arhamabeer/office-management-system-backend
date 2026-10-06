@@ -59,3 +59,6 @@ export const approveHandler = asyncHandler(async (req, res) => {
 export const rejectHandler = asyncHandler(async (req, res) => {
   sendOk(res, await service.decideRequest(req.user!, req.params.id, false, req.body.comment));
 });
+export const forwardHandler = asyncHandler(async (req, res) => {
+  sendOk(res, await service.forwardRequest(req.user!, req.params.id, req.body));
+});

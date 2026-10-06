@@ -5,6 +5,7 @@ import {
   updateLeavePolicySchema,
   applyLeaveSchema,
   leaveDecisionSchema,
+  leaveForwardSchema,
   leaveRequestsQuerySchema,
   leaveBalanceQuerySchema,
   leaveCalendarQuerySchema,
@@ -39,5 +40,6 @@ router.get('/requests/export', validate({ query: leaveRequestsQuerySchema }), c.
 router.patch('/requests/:id/cancel', validate({ params: idParamSchema }), c.cancelHandler);
 router.patch('/requests/:id/approve', validate({ params: idParamSchema, body: leaveDecisionSchema }), c.approveHandler);
 router.patch('/requests/:id/reject', validate({ params: idParamSchema, body: leaveDecisionSchema }), c.rejectHandler);
+router.patch('/requests/:id/forward', validate({ params: idParamSchema, body: leaveForwardSchema }), c.forwardHandler);
 
 export default router;
