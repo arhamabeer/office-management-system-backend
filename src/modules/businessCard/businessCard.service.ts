@@ -196,9 +196,27 @@ export async function getCardPdf(actor: AuthUser): Promise<{ buffer: Buffer; fil
     y = doc.y + 3;
   }
 
-  // ---- BACK ----
+  // ---- BACK: solid orange with the company wordmark, tagline + contact ----
   doc.addPage({ size: [W, H], margin: 0 });
   doc.rect(0, 0, W, H).fill(ORANGE);
+
+  doc
+    .font('Helvetica-Bold')
+    .fontSize(30)
+    .fillColor('#ffffff')
+    .text(company.companyName, 0, 80, { width: W, align: 'center', characterSpacing: 1 });
+  let by = doc.y + 8;
+  if (company.tagline) {
+    doc.font('Helvetica-Oblique').fontSize(12).fillColor('#ffe3d1').text(company.tagline, 60, by, { width: W - 120, align: 'center' });
+    by = doc.y;
+  }
+  by += 26;
+  const backLines = [stripProto(company.website), company.email, company.phone, company.address].filter(Boolean) as string[];
+  doc.font('Helvetica').fontSize(10).fillColor('#ffffff');
+  for (const ln of backLines) {
+    doc.text(ln, 44, by, { width: W - 88, align: 'center' });
+    by = doc.y + 5;
+  }
 
   const buffer = await toBuffer(doc);
   const safe = employee.fullName.replace(/[^a-z0-9]+/gi, '-').toLowerCase() || 'card';
