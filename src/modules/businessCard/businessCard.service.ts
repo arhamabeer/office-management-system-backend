@@ -136,6 +136,13 @@ const stripProto = (u?: string): string => (u ?? '').replace(/^https?:\/\//, '')
 export async function getCardPdf(actor: AuthUser): Promise<{ buffer: Buffer; filename: string }> {
   const { employee, company } = await cardFor(actor);
 
+  // Scan-to-save-contact QR (vCard), drawn on the white front field.
+  const qrBuf = await QRCode.toBuffer(buildVCard(employee, company), {
+    margin: 1,
+    width: 300,
+    color: { dark: INK, light: '#ffffff' },
+  });
+
   // 3.5" x 2" business card, scaled up for a crisp on-screen/print rendering.
   const W = 525;
   const H = 300;
@@ -157,25 +164,39 @@ export async function getCardPdf(actor: AuthUser): Promise<{ buffer: Buffer; fil
   const logoW = 188;
   drawLogo(doc, PAD, 42, logoW);
 
+  // Scan-to-save QR in the lower-left; the surrounding white is its quiet zone.
+  const qrSize = 86;
+  const qrY = 132;
+  doc.image(qrBuf, PAD, qrY, { width: qrSize, height: qrSize });
+  doc
+    .font('Helvetica')
+    .fontSize(7.5)
+    .fillColor(LABEL)
+    .text('Scan to save contact', PAD, qrY + qrSize + 6, { width: qrSize + 34 });
+
   // Right column.
   const RX = 250;
   const RW = W - RX - PAD - BAR;
   let y = 44;
 
-  doc.font('Helvetica-Bold').fontSize(22).fillColor(NAME).text(employee.fullName.toUpperCase(), RX, y, { width: RW });
+  // Name and title are each capped to a single (ellipsised) line so the right
+  // column has a bounded height and never pushes the contact rows off the card.
+  doc.font('Helvetica-Bold').fontSize(22).fillColor(NAME).text(employee.fullName.toUpperCase(), RX, y, { width: RW, height: 26, ellipsis: true });
   y = doc.y + 3;
   if (employee.designation) {
-    doc.font('Helvetica').fontSize(12).fillColor(TITLE).text(employee.designation, RX, y, { width: RW });
+    doc.font('Helvetica').fontSize(12).fillColor(TITLE).text(employee.designation, RX, y, { width: RW, height: 15, ellipsis: true });
     y = doc.y;
   }
 
-  // Address block (one line per comma-separated segment).
+  // Address block (one line per comma segment, capped at 5 lines so a long
+  // address can't overflow — any extra segments fold onto the last line).
   if (company.address) {
     y += 14;
-    const lines = company.address.split(',').map((s) => s.trim()).filter(Boolean);
+    const segs = company.address.split(',').map((s) => s.trim()).filter(Boolean);
+    const lines = segs.length <= 5 ? segs : [...segs.slice(0, 4), segs.slice(4).join(', ')];
     doc.font('Helvetica').fontSize(10).fillColor(BODY);
     for (const ln of lines) {
-      doc.text(ln, RX, y, { width: RW });
+      doc.text(ln, RX, y, { width: RW, height: 13, ellipsis: true });
       y = doc.y + 1;
     }
   }
