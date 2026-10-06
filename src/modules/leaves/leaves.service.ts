@@ -474,21 +474,32 @@ export async function decideRequest(
   return reqDTO(req, types.get(String(req.typeId)));
 }
 
-/** A manager forwards a pending leave to the Operations/Admin handler queue(s). */
+/**
+ * Escalate a pending leave one step along the chain: a manager forwards to
+ * Operations; Operations escalates to Admin. Admins never see it until then.
+ */
 export async function forwardRequest(actor: AuthUser, id: string, input: LeaveForwardInput): Promise<LeaveRequestDTO> {
   const req = await LeaveRequest.findById(id);
   if (!req) throw new NotFoundError('Leave request not found');
   if (req.status !== 'Pending') throw new ConflictError('This request has already been decided');
-  if ((req.routedTo ?? []).length) throw new ConflictError('This request has already been forwarded');
 
   if (String(req.userId) === actor.id && !(actor.accountType === 'Owner' || actor.orgRole === 'Admin')) {
     throw new ForbiddenError('You cannot forward your own request');
   }
+  const routedTo = (req.routedTo ?? []) as RequestRouteTarget[];
   const caps = await capsFor(actor, String(req.userId));
-  if (!caps.canManage) throw new ForbiddenError('Only a manager for this request can forward it');
+  let next: RequestRouteTarget;
+  if (routedTo.length === 0) {
+    if (!caps.canManage) throw new ForbiddenError('Only a manager for this request can forward it');
+    next = 'Operations';
+  } else if (routedTo.includes('Operations')) {
+    if (!caps.canActOps) throw new ForbiddenError('Only Operations can escalate this to Admin');
+    next = 'Admin';
+  } else {
+    throw new ConflictError('This request cannot be forwarded further');
+  }
 
-  const targets = [...new Set(input.targets)] as RequestRouteTarget[];
-  req.routedTo = targets;
+  req.routedTo = [next];
   if (input.comment) req.comment = input.comment;
   await req.save();
 
@@ -498,13 +509,13 @@ export async function forwardRequest(actor: AuthUser, id: string, input: LeaveFo
     actorLabel: actor.email,
     targetType: 'LeaveRequest',
     targetId: String(req._id),
-    meta: { targets },
+    meta: { to: next },
   });
 
   const types = await typeMap();
   const who = (await displayName(String(req.userId))) ?? 'an employee';
   await notifyMany(
-    await handlerUserIds(targets),
+    await handlerUserIds([next]),
     {
       type: 'approval.pending',
       title: 'Leave request forwarded to you',

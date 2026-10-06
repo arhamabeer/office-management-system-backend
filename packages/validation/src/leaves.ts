@@ -1,5 +1,4 @@
 import { z } from 'zod';
-import { REQUEST_ROUTE_TARGETS } from '@ems/types';
 import { objectIdSchema } from './common';
 
 const dayKey = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Expected YYYY-MM-DD');
@@ -47,9 +46,8 @@ export type ApplyLeaveInput = z.infer<typeof applyLeaveSchema>;
 export const leaveDecisionSchema = z.object({ comment: z.string().trim().max(500).optional() });
 export type LeaveDecisionInput = z.infer<typeof leaveDecisionSchema>;
 
-/** A manager forwards a pending leave to the Operations/Admin handler queue(s). */
+/** Escalate a pending leave one stage (manager → Operations → Admin). */
 export const leaveForwardSchema = z.object({
-  targets: z.array(z.enum(REQUEST_ROUTE_TARGETS)).min(1),
   comment: z.string().trim().max(500).optional(),
 });
 export type LeaveForwardInput = z.infer<typeof leaveForwardSchema>;

@@ -890,6 +890,41 @@ export async function decideRegularization(
   return toRegDTO(req);
 }
 
+/** Operations escalates a pending regularization to the Admin queue. */
+export async function forwardRegularization(actor: AuthUser, id: string, comment?: string): Promise<RegularizationDTO> {
+  const req = await Regularization.findById(id);
+  if (!req) throw new NotFoundError('Regularization request not found');
+  if (req.status !== 'Pending') throw new ConflictError('This request has already been decided');
+  const routedTo = (req.routedTo ?? []) as RequestRouteTarget[];
+  if (!routedTo.includes('Operations')) {
+    throw new ConflictError('Only an Operations-queued request can be escalated to Admin');
+  }
+  if (String(req.userId) === actor.id && !(actor.accountType === 'Owner' || actor.orgRole === 'Admin')) {
+    throw new ForbiddenError('You cannot forward your own request');
+  }
+  const caps = await capsFor(actor, String(req.userId));
+  if (!caps.canActOps) throw new ForbiddenError('Only Operations can escalate this to Admin');
+
+  req.routedTo = ['Admin'];
+  if (comment) req.comment = comment;
+  await req.save();
+  await recordAudit({
+    action: 'attendance.regularization_forwarded',
+    actorId: actor.id,
+    actorLabel: actor.email,
+    targetType: 'Regularization',
+    targetId: String(req._id),
+    meta: { to: 'Admin' },
+  });
+  const who = `${(await EmployeeProfile.findOne({ userId: req.userId }).select('firstName lastName'))?.firstName ?? 'An employee'}`;
+  await notifyMany(
+    await handlerUserIds(['Admin']),
+    { type: 'approval.pending', title: 'Attendance request escalated to you', body: `${who}'s attendance request for ${req.date} was escalated by Operations.`, link: '/approvals', email: true },
+    actor.id,
+  );
+  return toRegDTO(req);
+}
+
 // ---- policy + holidays ----
 
 export async function getPolicy(): Promise<AttendancePolicyDTO> {

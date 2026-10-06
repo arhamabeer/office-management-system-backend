@@ -54,13 +54,11 @@ export interface ApplyResult {
   stage: 'manager' | 'operations' | 'admin';
 }
 
-const MANAGER_FORWARDS: Partial<Record<RequestAction, RequestRouteTarget[]>> = {
-  forward_operations: ['Operations'],
-  forward_admin: ['Admin'],
-  forward_both: ['Operations', 'Admin'],
-};
-
-/** Compute the next state for an action, or throw a RequestWorkflowError. Pure. */
+/**
+ * Compute the next state for an action, or throw a RequestWorkflowError. Pure.
+ * The chain is strict: Manager → Operations → Admin. A manager may only forward
+ * to Operations (never straight to Admin); Operations may escalate to Admin.
+ */
 export function applyRequestAction(
   state: { status: RequestStatus; routedTo: RequestRouteTarget[] },
   action: RequestAction,
@@ -76,9 +74,8 @@ export function applyRequestAction(
     }
     if (action === 'resolve') return { status: 'Resolved', routedTo: [], stage: 'manager' };
     if (action === 'reject') return { status: 'Rejected', routedTo: [], stage: 'manager' };
-    const fwd = MANAGER_FORWARDS[action];
-    if (fwd) return { status: 'Forwarded', routedTo: [...fwd], stage: 'manager' };
-    throw new RequestWorkflowError('That action is not available at the manager stage', 'conflict');
+    if (action === 'forward_operations') return { status: 'Forwarded', routedTo: ['Operations'], stage: 'manager' };
+    throw new RequestWorkflowError('A manager can only forward a request to Operations', 'conflict');
   }
 
   // state.status === 'Forwarded' (handler stage)
@@ -106,19 +103,24 @@ function isOrgAdmin(actor: AuthUser): boolean {
   return actor.accountType === 'Owner' || actor.orgRole === 'Admin';
 }
 
-/** Resolve what `actor` may do to a request filed by `filerId`. */
+/**
+ * Resolve what `actor` may do to a request filed by `filerId`. The chain is
+ * strict: Managers act at the manager stage for their own team; Operations works
+ * the Operations queue; Owner/Admin ONLY the Admin queue (nothing reaches them
+ * until Operations escalates).
+ */
 export async function capsFor(actor: AuthUser, filerId: string): Promise<RequestActorCaps> {
   const admin = isOrgAdmin(actor);
   const caps: RequestActorCaps = {
-    canManage: admin,
-    canActOps: admin || actor.orgRole === 'Operations',
+    canManage: false,
+    canActOps: actor.orgRole === 'Operations',
     canActAdmin: admin,
   };
-  if (!caps.canManage && isAtLeast(actor.orgRole, 'Lead')) {
-    const { orgWide, ids } = await scopedUserIds(actor);
+  if (!admin && isAtLeast(actor.orgRole, 'Lead')) {
+    const { ids } = await scopedUserIds(actor);
     // A Lead/Manager manages a request only for someone in their team scope, and
-    // never their own (self-handling is blocked; admins are orgWide and exempt).
-    caps.canManage = orgWide || (filerId !== actor.id && ids.some((i) => String(i) === String(filerId)));
+    // never their own (self-handling is blocked).
+    caps.canManage = filerId !== actor.id && ids.some((i) => String(i) === String(filerId));
   }
   return caps;
 }
@@ -131,16 +133,12 @@ export async function capsFor(actor: AuthUser, filerId: string): Promise<Request
  */
 export async function buildInboxFilter(actor: AuthUser): Promise<Record<string, unknown>> {
   const admin = isOrgAdmin(actor);
-  const isOps = admin || actor.orgRole === 'Operations';
-  const canManage = admin || isAtLeast(actor.orgRole, 'Lead');
+  const isOps = actor.orgRole === 'Operations';
+  const isManager = !admin && isAtLeast(actor.orgRole, 'Lead');
   const or: Record<string, unknown>[] = [];
-  if (canManage) {
-    const mgr: Record<string, unknown> = { status: 'Submitted' };
-    if (!admin) {
-      const { ids } = await scopedUserIds(actor);
-      mgr.userId = { $in: ids.filter((i) => String(i) !== actor.id) };
-    }
-    or.push(mgr);
+  if (isManager) {
+    const { ids } = await scopedUserIds(actor);
+    or.push({ status: 'Submitted', userId: { $in: ids.filter((i) => String(i) !== actor.id) } });
   }
   if (isOps) or.push({ status: 'Forwarded', routedTo: 'Operations' });
   if (admin) or.push({ status: 'Forwarded', routedTo: 'Admin' });
@@ -161,19 +159,16 @@ export function actorRoleLabel(actor: AuthUser): string {
  */
 export async function buildPendingInboxFilter(actor: AuthUser): Promise<Record<string, unknown>> {
   const admin = isOrgAdmin(actor);
-  const isOps = admin || actor.orgRole === 'Operations';
-  const canManage = admin || isAtLeast(actor.orgRole, 'Lead');
+  const isOps = actor.orgRole === 'Operations';
+  const isManager = !admin && isAtLeast(actor.orgRole, 'Lead');
   const or: Record<string, unknown>[] = [];
-  if (canManage) {
-    const mgr: Record<string, unknown> = {
+  if (isManager) {
+    const { ids } = await scopedUserIds(actor);
+    or.push({
       status: 'Pending',
       $or: [{ routedTo: { $size: 0 } }, { routedTo: { $exists: false } }],
-    };
-    if (!admin) {
-      const { ids } = await scopedUserIds(actor);
-      mgr.userId = { $in: ids.filter((i) => String(i) !== actor.id) };
-    }
-    or.push(mgr);
+      userId: { $in: ids.filter((i) => String(i) !== actor.id) },
+    });
   }
   if (isOps) or.push({ status: 'Pending', routedTo: 'Operations' });
   if (admin) or.push({ status: 'Pending', routedTo: 'Admin' });
@@ -220,15 +215,31 @@ export async function nameMap(userIds: Types.ObjectId[]): Promise<Map<string, st
   return new Map(profs.map((p) => [String(p.userId), `${p.firstName ?? ''} ${p.lastName ?? ''}`.trim()]));
 }
 
-/** Notify the filer's manager (reportsTo) that a new request needs review;
- *  if they have no manager on file, fall back to the Admin queue. Best-effort. */
+/**
+ * Initial routing for a filed complaint/inventory request: normally the manager
+ * stage, but straight to Operations when the filer has no manager on file (and
+ * to Admin only if Operations isn't staffed) — so a request is never orphaned
+ * and never lands on Admin just because a manager is missing.
+ */
+export async function initialRequestRouting(
+  filerId: string,
+): Promise<{ status: RequestStatus; routedTo: RequestRouteTarget[] }> {
+  const prof = await EmployeeProfile.findOne({ userId: filerId }).select('reportsToId');
+  if (prof?.reportsToId) return { status: 'Submitted', routedTo: [] };
+  const ops = await hasOperationsStaff();
+  return { status: 'Forwarded', routedTo: [ops ? 'Operations' : 'Admin'] };
+}
+
+/** Notify whoever should review a freshly-filed request: the filer's manager, or
+ *  (when they have no manager) the Operations queue — never Admin directly. */
 export async function notifyNewRequest(filerId: string, title: string, body: string): Promise<void> {
   const prof = await EmployeeProfile.findOne({ userId: filerId }).select('reportsToId');
   if (prof?.reportsToId) {
     await notify({ userId: String(prof.reportsToId), type: 'approval.pending', title, body, link: '/approvals', email: true });
-  } else {
-    await notifyMany(await handlerUserIds(['Admin']), { type: 'approval.pending', title, body, link: '/approvals' }, filerId);
+    return;
   }
+  const ops = await hasOperationsStaff();
+  await notifyMany(await handlerUserIds([ops ? 'Operations' : 'Admin']), { type: 'approval.pending', title, body, link: '/approvals', email: true }, filerId);
 }
 
 // ---------------------------------------------------------------- shared schema pieces

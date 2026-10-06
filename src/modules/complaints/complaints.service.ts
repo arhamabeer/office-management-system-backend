@@ -29,6 +29,7 @@ import {
   displayName,
   nameMap,
   notifyNewRequest,
+  initialRequestRouting,
   filedTimelineEntry,
   RequestWorkflowError,
 } from '../../common/requestWorkflow';
@@ -119,14 +120,15 @@ export async function createComplaint(actor: AuthUser, input: CreateComplaintInp
   const category = await ComplaintCategory.findById(input.categoryId);
   if (!category || !category.active) throw new NotFoundError('Complaint category not found');
   const name = await displayName(actor.id);
+  const routing = await initialRequestRouting(actor.id);
   const doc = await Complaint.create({
     userId: new Types.ObjectId(actor.id),
     categoryId: category._id,
     subject: input.subject,
     reason: input.reason,
     details: input.details,
-    status: 'Submitted',
-    routedTo: [],
+    status: routing.status,
+    routedTo: routing.routedTo,
     timeline: [filedTimelineEntry(actor, name)],
   });
   await recordAudit({ action: 'complaint.filed', actorId: actor.id, actorLabel: actor.email, targetType: 'Complaint', targetId: String(doc._id), meta: { category: category.code } });

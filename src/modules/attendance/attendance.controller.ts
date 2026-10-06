@@ -103,3 +103,7 @@ export const approveRegularizationHandler = asyncHandler(async (req, res) => {
 export const rejectRegularizationHandler = asyncHandler(async (req, res) => {
   sendOk(res, await service.decideRegularization(req.user!, req.params.id, false, req.body.comment));
 });
+
+export const forwardRegularizationHandler = asyncHandler(async (req, res) => {
+  sendOk(res, await service.forwardRegularization(req.user!, req.params.id, req.body.comment));
+});

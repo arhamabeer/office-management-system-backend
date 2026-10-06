@@ -66,6 +66,7 @@ router.post('/regularizations', validate({ body: regularizationCreateSchema }), 
 router.get('/regularizations', validate({ query: regularizationListQuerySchema }), c.listRegularizationsHandler);
 router.patch('/regularizations/:id/approve', validate({ params: idParamSchema, body: regularizationDecisionSchema }), c.approveRegularizationHandler);
 router.patch('/regularizations/:id/reject', validate({ params: idParamSchema, body: regularizationDecisionSchema }), c.rejectRegularizationHandler);
+router.patch('/regularizations/:id/forward', validate({ params: idParamSchema, body: regularizationDecisionSchema }), c.forwardRegularizationHandler);
 
 // Biometric devices (Admin/Owner). The device's own punches arrive unauthenticated
 // at /iclock (ADMS); these endpoints manage/approve devices and reconcile data.
