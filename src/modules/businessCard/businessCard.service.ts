@@ -166,13 +166,8 @@ export async function getCardPdf(actor: AuthUser): Promise<{ buffer: Buffer; fil
 
   // Scan-to-save QR in the lower-left; the surrounding white is its quiet zone.
   const qrSize = 86;
-  const qrY = 132;
+  const qrY = 150;
   doc.image(qrBuf, PAD, qrY, { width: qrSize, height: qrSize });
-  doc
-    .font('Helvetica')
-    .fontSize(7.5)
-    .fillColor(LABEL)
-    .text('Scan to save contact', PAD, qrY + qrSize + 6, { width: qrSize + 34 });
 
   // Right column.
   const RX = 250;
