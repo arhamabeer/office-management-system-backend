@@ -33,10 +33,10 @@ describe('request workflow state machine (applyRequestAction)', () => {
       });
     });
 
-    it('forwards to operations, admin, or both', () => {
+    it('forwards only to operations (never straight to admin or both)', () => {
       expect(applyRequestAction(submitted, 'forward_operations', caps({ canManage: true })).routedTo).toEqual(['Operations']);
-      expect(applyRequestAction(submitted, 'forward_admin', caps({ canManage: true })).routedTo).toEqual(['Admin']);
-      expect(applyRequestAction(submitted, 'forward_both', caps({ canManage: true })).routedTo).toEqual(['Operations', 'Admin']);
+      expect(() => applyRequestAction(submitted, 'forward_admin', caps({ canManage: true }))).toThrow();
+      expect(() => applyRequestAction(submitted, 'forward_both', caps({ canManage: true }))).toThrow();
     });
 
     it('blocks a non-manager (forbidden)', () => {

@@ -105,6 +105,17 @@ describe('attendance regularization: direct to Operations, fallback to manager',
     expect(decided.status).toBe('Approved');
   });
 
+  it('lets Operations escalate a regularization to Admin', async () => {
+    const r = await createRegularization(uid.emp, regInput('2026-11-12'));
+    expect(r.routedTo).toEqual(['Operations']);
+    // Admin cannot act while it is at Operations.
+    await expect(decideRegularization(actor.owner, r.id, true)).rejects.toThrow();
+    const fwd = await forwardRegularization(actor.ops, r.id);
+    expect(fwd.routedTo).toEqual(['Admin']);
+    expect(titlesFor(await listRegularizations(actor.owner, 'pending'), r.id)).toBe(true);
+    expect((await decideRegularization(actor.owner, r.id, true)).status).toBe('Approved');
+  });
+
   it('falls back to the manager when no Operations user is active', async () => {
     await User.updateOne({ _id: uid.ops }, { $set: { status: 'Inactive' } });
     try {
